@@ -3943,6 +3943,8 @@ export default function KineticSouls() {
           imageRendering: "pixelated",
           cursor: stateRef.current.handOfGod ? "crosshair" : "default",
           touchAction: "none",
+          pointerEvents: "auto",
+          zIndex: 5,
         }}
       />
 
