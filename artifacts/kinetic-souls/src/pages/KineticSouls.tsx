@@ -223,6 +223,7 @@ interface GameState {
   menuSimulator: boolean;
   minimapTextPulse: boolean;
   bountyEndsGame: boolean;
+  realisticPhysics: boolean;
   [key: string]: unknown;
 }
 
@@ -1932,6 +1933,7 @@ function drawMainMenu(
   mouse: { x: number; y: number },
   ts: number,
   state: GameState,
+  splash: string,
 ) {
   const W = ARENA_W;
   const H = ARENA_H + SCOREBOARD_H;
@@ -1990,8 +1992,6 @@ function drawMainMenu(
 
   ctx.fillStyle = "rgba(255,255,255,0.28)";
   ctx.font = "11px monospace";
-  const splash =
-    "LOK HORIZON: Connecting...";
   ctx.fillText(splash, W / 2, 100);
 
   const bw = 160, bh = 34, gapY = 10;
@@ -2293,6 +2293,7 @@ function drawSettingsMenu(
     { label: "Opt: Smart Spawn", key: "optSmartSpawn" },
     { label: "Opt: Grid", key: "optGrid" },
     { label: "Opt: Pool", key: "optPool" },
+    { label: "Realistic Physics", key: "realisticPhysics" },
   ];
 
   const cols = 4;
@@ -2562,7 +2563,6 @@ export default function KineticSouls() {
   });
   const lokCoinsRef = useRef<number>(0);
 
-  void currentSplash;
   void hoverBox;
   void setHoverBox;
   void joyRef;
@@ -2632,6 +2632,7 @@ export default function KineticSouls() {
     menuSimulator: true,
     minimapTextPulse: true,
     bountyEndsGame: false,
+    realisticPhysics: false,
   });
 
   const refs = {
@@ -2915,7 +2916,7 @@ export default function KineticSouls() {
       }
 
       if (screen === "menu") {
-        drawMainMenu(ctx, refs.mode.current, refs.opp.current, mouseRef.current, timestamp, state);
+        drawMainMenu(ctx, refs.mode.current, refs.opp.current, mouseRef.current, timestamp, state, currentSplash);
         if (state.menuSimulator) {
           timeRef.botTimer.current += subDtRaw;
           if (timeRef.botTimer.current > 1000) {
@@ -3774,7 +3775,7 @@ export default function KineticSouls() {
           "hud","trails","motionBlur","ads","crtFilter","vhsFilter","invertFilter",
           "aiMagnetic","handOfGod","moonGravity","explodingCorpses","sloMoKills",
           "rainbowBlood","menuGrid","menuParticles","menuDrift","menuCRT","menuPulse",
-          "menuSimulator","optCache","optDelta","optGravity","optSmartSpawn","optGrid","optPool",
+          "menuSimulator","optCache","optDelta","optGravity","optSmartSpawn","optGrid","optPool","realisticPhysics",
         ];
         const cols = 4, tw = 200, th = 26, gap3 = 6;
         const totalW = cols * tw + (cols - 1) * gap3;
