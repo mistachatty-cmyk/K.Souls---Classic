@@ -3742,11 +3742,11 @@ export default function KineticSouls() {
 
         const sections = [
           { items: allThemes, col: 0, row: 0, setter: (v: string) => { refs.theme.current = v as ThemeMode; stateRef.current.theme = v as ThemeMode; Object.keys(spriteCache).forEach(k => delete spriteCache[k]); } },
-          { items: allMods, col: 1, row: 0, setter: (v: string) => { refs.mod.current = v as LokModifier; } },
-          { items: allCams, col: 2, row: 0, setter: (v: string) => { refs.cam.current = v as CameraMode; } },
-          { items: allWeps, col: 2, row: 1, setter: (v: string) => { refs.wep.current = v as WeaponStyle; } },
-          { items: allEnvs, col: 1, row: 1, setter: (v: string) => { refs.env.current = v as Environment; } },
-          { items: allViews, col: 2, row: 2, setter: (v: string) => { refs.view.current = v as ViewMode; } },
+          { items: allMods, col: 1, row: 0, setter: (v: string) => { refs.mod.current = v as LokModifier; stateRef.current.modifier = v as LokModifier; } },
+          { items: allCams, col: 2, row: 0, setter: (v: string) => { refs.cam.current = v as CameraMode; stateRef.current.camera = v as CameraMode; } },
+          { items: allWeps, col: 2, row: 1, setter: (v: string) => { refs.wep.current = v as WeaponStyle; stateRef.current.weaponStyle = v as WeaponStyle; } },
+          { items: allEnvs, col: 1, row: 1, setter: (v: string) => { refs.env.current = v as Environment; stateRef.current.environment = v as Environment; } },
+          { items: allViews, col: 2, row: 2, setter: (v: string) => { refs.view.current = v as ViewMode; stateRef.current.viewMode = v as ViewMode; } },
         ];
 
         for (const sec of sections) {
