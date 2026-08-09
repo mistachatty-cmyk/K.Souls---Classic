@@ -3935,8 +3935,11 @@ export default function KineticSouls() {
         height={ARENA_H + SCOREBOARD_H}
         style={{
           display: "block",
-          maxWidth: "100%",
-          maxHeight: "100%",
+          width: "100%",
+          height: "auto",
+          maxWidth: "100vw",
+          maxHeight: "100vh",
+          aspectRatio: `${ARENA_W} / ${ARENA_H + SCOREBOARD_H}`,
           imageRendering: "pixelated",
           cursor: stateRef.current.handOfGod ? "crosshair" : "default",
           touchAction: "none",
@@ -3957,7 +3960,8 @@ export default function KineticSouls() {
           borderRadius: 4,
           alignItems: "center",
           flexWrap: "wrap",
-          maxWidth: ARENA_W,
+          maxWidth: "95vw",
+          width: "100%",
         }}
       >
         <span style={{ color: "#ff6655", fontSize: 10, fontFamily: "monospace", marginRight: 4 }}>P1 SKIN:</span>
@@ -4014,15 +4018,15 @@ export default function KineticSouls() {
       </div>
 
       {showMobileUI && (
-        <div style={{ position: "absolute", bottom: 44, display: "flex", gap: 12 }}>
+        <div style={{ position: "absolute", bottom: 50, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", maxWidth: "95vw" }}>
           <button
             onPointerDown={(e) => { e.preventDefault(); spawnP1(); }}
             style={{
               background: "rgba(255,80,80,0.7)",
               color: "#fff",
               border: "2px solid #ff4444",
-              padding: "14px 28px",
-              fontSize: 14,
+              padding: "12px 24px",
+              fontSize: "clamp(12px, 3vw, 14px)",
               fontFamily: "monospace",
               borderRadius: 8,
               cursor: "pointer",
@@ -4037,8 +4041,8 @@ export default function KineticSouls() {
               background: "rgba(80,100,255,0.7)",
               color: "#fff",
               border: "2px solid #4466ff",
-              padding: "14px 28px",
-              fontSize: 14,
+              padding: "12px 24px",
+              fontSize: "clamp(12px, 3vw, 14px)",
               fontFamily: "monospace",
               borderRadius: 8,
               cursor: "pointer",
@@ -4057,6 +4061,7 @@ export default function KineticSouls() {
             position: "absolute",
             top: 20,
             left: 10,
+            right: 10,
             background: "rgba(0,0,20,0.95)",
             border: "1px solid rgba(100,120,255,0.5)",
             borderRadius: 6,
@@ -4065,6 +4070,9 @@ export default function KineticSouls() {
             fontFamily: "monospace",
             fontSize: 11,
             minWidth: 240,
+            maxWidth: "95vw",
+            maxHeight: "70vh",
+            overflowY: "auto",
             zIndex: 10,
           }}
         >
