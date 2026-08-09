@@ -3896,6 +3896,7 @@ export default function KineticSouls() {
 
     canvas.addEventListener("mousemove", handleMouseMove);
     canvas.addEventListener("click", handleClick);
+    canvas.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") handleClick(e as MouseEvent); });
     canvas.addEventListener("mousedown", handleMouseDown);
     canvas.addEventListener("mouseup", handleMouseUp);
     canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
@@ -3905,6 +3906,7 @@ export default function KineticSouls() {
     return () => {
       canvas.removeEventListener("mousemove", handleMouseMove);
       canvas.removeEventListener("click", handleClick);
+      canvas.removeEventListener("pointerdown", handleClick);
       canvas.removeEventListener("mousedown", handleMouseDown);
       canvas.removeEventListener("mouseup", handleMouseUp);
       canvas.removeEventListener("touchstart", handleTouchStart);
@@ -3964,6 +3966,7 @@ export default function KineticSouls() {
           flexWrap: "wrap",
           maxWidth: "95vw",
           width: "100%",
+          zIndex: 1,
         }}
       >
         <span style={{ color: "#ff6655", fontSize: 10, fontFamily: "monospace", marginRight: 4 }}>P1 SKIN:</span>
@@ -3980,6 +3983,7 @@ export default function KineticSouls() {
               fontFamily: "monospace",
               cursor: "pointer",
               borderRadius: 3,
+              pointerEvents: "auto",
             }}
           >
             {s}
