@@ -1,4 +1,5 @@
 {
+  "comment": "Auto-deployment test",
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm --filter @workspace/kinetic-souls run build",
   "installCommand": "pnpm install",
