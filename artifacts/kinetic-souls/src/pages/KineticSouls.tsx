@@ -96,7 +96,7 @@ type MinimapPosition =
   | "bottom-center"
   | "top-center"
   | "center";
-type WeaponStyle = "standard" | "roulette" | "melee_mash" | "ranged_test";
+type WeaponStyle = "standard" | "roulette" | "melee_mash" | "ranged_test" | "none";
 type Environment =
   | "none"
   | "ice"
@@ -223,6 +223,7 @@ interface GameState {
   menuSimulator: boolean;
   minimapTextPulse: boolean;
   bountyEndsGame: boolean;
+  [key: string]: unknown;
 }
 
 interface Part {
@@ -393,7 +394,7 @@ function spawnCharacter(
   let speed = (SPAWN_SPEED + Math.random() * 1.5) * speedMult;
   let weapon: WeaponType = "standard";
   let shieldHp = 0;
-  let mass = modifier === "heavy" ? 3 : 1;
+  let mass = 1;
   let isBoss = forceBoss;
 
   if (wStyle === "roulette" || wStyle === "melee_mash")
@@ -1286,51 +1287,49 @@ function drawRawChar(
     if (c.weapon !== "none") {
       let wCol1 = flash ? "white" : "#ffee44";
       let wCol2 = flash ? "white" : "#aaaaaa";
-      if (theme === "gameboy") {
+
+      const themeValue = theme as ThemeMode;
+
+      if (themeValue === "gameboy") {
         wCol1 = "#9bbc0f";
         wCol2 = "#306230";
-      }
-      if (theme === "runesite" || theme === "runesite_ultimate") {
+      } else if (themeValue === "runesite" || themeValue === "runesite_ultimate") {
         wCol1 = flash ? "white" : "#aaaaaa";
         wCol2 = flash ? "white" : "#555555";
-      }
-      if (theme === "gsix") {
+      } else if (themeValue === "gsix") {
         wCol1 = flash ? "white" : "#00f0ff";
         wCol2 = flash ? "white" : "#444";
-      }
-      if (
-        theme === "gilded" ||
-        theme === "lokmod" ||
-        theme === "celestial" ||
+      } else if (
+        themeValue === "gilded" ||
+        themeValue === "lokmod" ||
+        themeValue === "celestial" ||
         c.kineticType === "bounty" ||
-        theme === "celestial_forge"
+        themeValue === "celestial_forge"
       ) {
         wCol1 = flash ? "white" : "#ffd700";
         wCol2 = flash ? "white" : "#cc9900";
-      }
-      if (
-        theme === "vampire" ||
-        theme === "monochrome" ||
-        theme === "overdrive" ||
-        theme === "comic" ||
-        theme === "blood_moon"
+      } else if (
+        themeValue === "vampire" ||
+        themeValue === "monochrome" ||
+        themeValue === "overdrive" ||
+        themeValue === "comic" ||
+        themeValue === "blood_moon"
       ) {
         wCol1 = flash ? "white" : "#ff0000";
         wCol2 = flash ? "white" : "#555555";
-      }
-      if (
-        theme === "neon" ||
-        theme === "synthwave" ||
-        theme === "glitch" ||
-        theme === "neon_overdrive"
+      } else if (
+        themeValue === "neon" ||
+        themeValue === "synthwave" ||
+        themeValue === "glitch" ||
+        themeValue === "neon_overdrive"
       ) {
         wCol1 = flash ? "white" : "#ffff00";
         wCol2 = "transparent";
-      }
-      if (theme === "rgb_cycle") {
+      } else if (themeValue === "rgb_cycle") {
         wCol1 = color;
         wCol2 = "#fff";
       }
+
       drawWeapon(ctx, c.weapon, scale, wCol1, wCol2, theme, timestamp);
     }
     ctx.globalAlpha = 1;
