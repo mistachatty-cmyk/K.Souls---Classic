@@ -96,7 +96,7 @@ type MinimapPosition =
   | "bottom-center"
   | "top-center"
   | "center";
-type WeaponStyle = "standard" | "roulette" | "melee_mash" | "ranged_test";
+type WeaponStyle = "standard" | "roulette" | "melee_mash" | "ranged_test" | "none";
 type Environment =
   | "none"
   | "ice"
@@ -393,7 +393,7 @@ function spawnCharacter(
   let speed = (SPAWN_SPEED + Math.random() * 1.5) * speedMult;
   let weapon: WeaponType = "standard";
   let shieldHp = 0;
-  let mass = modifier === "heavy" ? 3 : 1;
+  let mass = 1;
   let isBoss = forceBoss;
 
   if (wStyle === "roulette" || wStyle === "melee_mash")
@@ -1318,18 +1318,9 @@ function drawRawChar(
         wCol1 = flash ? "white" : "#ff0000";
         wCol2 = flash ? "white" : "#555555";
       }
-      if (
-        theme === "neon" ||
-        theme === "synthwave" ||
-        theme === "glitch" ||
-        theme === "neon_overdrive"
-      ) {
+      if (theme === "neon" || theme === "synthwave") {
         wCol1 = flash ? "white" : "#ffff00";
         wCol2 = "transparent";
-      }
-      if (theme === "rgb_cycle") {
-        wCol1 = color;
-        wCol2 = "#fff";
       }
       drawWeapon(ctx, c.weapon, scale, wCol1, wCol2, theme, timestamp);
     }
@@ -2289,11 +2280,11 @@ function drawSettingsMenu(
     { label: "Menu Pulse", key: "menuPulse" },
     { label: "Menu Sim", key: "menuSimulator" },
     { label: "Opt: Cache", key: "optCache" },
-    { label: "Opt: Delta", key: "optDelta" },
     { label: "Opt: Gravity", key: "optGravity" },
     { label: "Opt: Smart Spawn", key: "optSmartSpawn" },
-    { label: "Opt: Grid", key: "optGrid" },
     { label: "Opt: Pool", key: "optPool" },
+    // optDelta and optGrid removed: unwired stub toggles with no effect on
+    // physics/render. State fields (GameState) kept for future re-implementation.
   ];
 
   const cols = 4;
@@ -2545,7 +2536,6 @@ export default function KineticSouls() {
     SPLASH_ARCHIVE[Math.floor(Math.random() * SPLASH_ARCHIVE.length)],
   );
   const [showMobileUI, setShowMobileUI] = useState(false);
-  const [bestiaryScroll] = useState(0);
   const [hoverBox, setHoverBox] = useState<{
     text: string;
     x: number;
@@ -2648,6 +2638,7 @@ export default function KineticSouls() {
     sLimit: useRef<number>(10),
     fSpeed: useRef<number>(1.0),
     minimapPos: useRef<MinimapPosition>("bottom-right"),
+    birthType: useRef<KineticType>("standard"),
   };
   const screenRef = useRef<ScreenState>("menu");
   const dataRef = {
@@ -2866,11 +2857,11 @@ export default function KineticSouls() {
     if (!st.running || st.paused || screenRef.current !== "game") return;
     const c = spawnCharacter(
       1, st.modifier, dataRef.chars.current, st.optSmartSpawn, st.optPool,
-      st.weaponStyle, st.fighterSpeed, undefined, undefined, birthType, p1SkinRef.current,
+      st.weaponStyle, st.fighterSpeed, undefined, undefined, refs.birthType.current, p1SkinRef.current,
     );
     if (!st.optPool || c.id >= charIdCounter - 1) dataRef.chars.current.push(c);
     lokCoinsRef.current = Math.max(0, lokCoinsRef.current - 5);
-  }, [birthType, dataRef.chars]);
+  }, [refs, dataRef.chars]);
 
   const spawnP2 = useCallback(() => {
     const st = stateRef.current;
@@ -2936,7 +2927,7 @@ export default function KineticSouls() {
       } else if (screen === "over") {
         drawGameOver(ctx, state);
       } else if (screen === "bestiary") {
-        drawBestiary(ctx, mouseRef.current, timestamp, bestiaryScroll);
+        drawBestiary(ctx, mouseRef.current, timestamp, 0);
       }
 
       if (screen === "game" || (screen === "menu" && state.menuSimulator)) {
@@ -2996,7 +2987,7 @@ export default function KineticSouls() {
               timeRef.p1Timer.current += dtRaw * state.timeScale;
               if (timeRef.p1Timer.current >= BOT_MIN_INTERVAL + Math.random() * (BOT_MAX_INTERVAL - BOT_MIN_INTERVAL)) {
                 timeRef.p1Timer.current = 0;
-                const newC = spawnCharacter(1, state.modifier, dataRef.chars.current, state.optSmartSpawn, state.optPool, state.weaponStyle, state.fighterSpeed, undefined, undefined, birthType, p1SkinRef.current);
+                const newC = spawnCharacter(1, state.modifier, dataRef.chars.current, state.optSmartSpawn, state.optPool, state.weaponStyle, state.fighterSpeed, undefined, undefined, refs.birthType.current, p1SkinRef.current);
                 if (!state.optPool || newC.id >= charIdCounter - 1) dataRef.chars.current.push(newC);
               }
             }
@@ -3005,6 +2996,10 @@ export default function KineticSouls() {
           const dt = subDtRaw * state.timeScale * 0.016;
           const DRAG = state.environment === "ice" ? 0.998 : state.environment === "bouncy" ? 1.0 : 0.985;
           const GRAVITY = state.optGravity && state.moonGravity ? 0.1 : 0;
+
+          if (state.environment === "storm") {
+            state.stormAngle += 0.01 * dtRaw * state.timeScale;
+          }
 
           const activeChars = dataRef.chars.current.filter((c) => !c.dead);
           state.stats.maxChars = Math.max(state.stats.maxChars, activeChars.length);
@@ -3144,7 +3139,7 @@ export default function KineticSouls() {
                 b.x += nx * overlap * (a.mass / totalMass);
                 b.y += ny * overlap * (a.mass / totalMass);
 
-                if (a.team !== b.team && state.juice !== "off") {
+                if (a.team !== b.team && state.juice !== "off" && screen === "game") {
                   state.hitPause = state.juice === "super" ? 80 : 40;
                   state.shakeFrames += state.juice === "super" ? 8 : 4;
                 }
@@ -3421,12 +3416,12 @@ export default function KineticSouls() {
           }
         }
 
-        const camShakeX = state2.shakeFrames > 0 ? (Math.random() - 0.5) * 6 : 0;
-        const camShakeY = state2.shakeFrames > 0 ? (Math.random() - 0.5) * 6 : 0;
+        const camShakeX = state2.shakeFrames > 0 && screen === "game" ? (Math.random() - 0.5) * 6 : 0;
+        const camShakeY = state2.shakeFrames > 0 && screen === "game" ? (Math.random() - 0.5) * 6 : 0;
         if (state2.shakeFrames > 0) state2.shakeFrames--;
 
         ctx.save();
-        if (state2.shakeFrames > 0) ctx.translate(camShakeX, camShakeY);
+        if (state2.shakeFrames > 0 && screen === "game") ctx.translate(camShakeX, camShakeY);
 
         for (const e of dataRef.essences.current) {
           if (!e.active) continue;
@@ -3656,7 +3651,7 @@ export default function KineticSouls() {
 
       timeRef.raf.current = requestAnimationFrame(gameLoop);
     },
-    [refs, dataRef, timeRef, endGame, triggerExplosion, spawnText, bestiaryScroll, birthType],
+    [refs, dataRef, timeRef, endGame, triggerExplosion, spawnText],
   );
 
   useEffect(() => {
@@ -3730,7 +3725,10 @@ export default function KineticSouls() {
       } else if (screen === "lok_menu") {
         const allThemes: ThemeMode[] = ["classic","neon","gameboy","abyss","runesite","gsix","gilded","synthwave","vampire","oceanic","infernal","glitch","monochrome","celestial","overdrive","comic","hacker","rgb_cycle","neon_abyss","glassmorphism","wireframe_matrix","celestial_forge","blood_moon","neon_overdrive","paper_sketch"];
         const allMods: LokModifier[] = ["none","sudden_death","titans","shrinking_arena","vampire_kiss","necromancy","magnet","repel","lok_bounty"];
-        const allCams: CameraMode[] = ["static","dynamic","action","enhanced"];
+        // Only "static" is wired to any render transform; "dynamic"/"action"/"enhanced"
+        // are picked but never applied to the camera, so they're hidden pending real
+        // camera-mode implementation (CameraMode type kept for future use).
+        const allCams: CameraMode[] = ["static"];
         const allWeps: WeaponStyle[] = ["standard","roulette","melee_mash","ranged_test"];
         const allEnvs: Environment[] = ["none","ice","blackhole","lava","storm","bouncy","wrap","blackout"];
         const allViews: ViewMode[] = ["standard","theater","cinematic"];
@@ -3775,7 +3773,7 @@ export default function KineticSouls() {
           "hud","trails","motionBlur","ads","crtFilter","vhsFilter","invertFilter",
           "aiMagnetic","handOfGod","moonGravity","explodingCorpses","sloMoKills",
           "rainbowBlood","menuGrid","menuParticles","menuDrift","menuCRT","menuPulse",
-          "menuSimulator","optCache","optDelta","optGravity","optSmartSpawn","optGrid","optPool",
+          "menuSimulator","optCache","optGravity","optSmartSpawn","optPool",
         ];
         const cols = 4, tw = 200, th = 26, gap3 = 6;
         const totalW = cols * tw + (cols - 1) * gap3;
@@ -3786,7 +3784,7 @@ export default function KineticSouls() {
           const bx = startX2 + col * (tw + gap3);
           const by = startY2 + row * (th + gap3);
           if (mx >= bx && mx <= bx + tw && my >= by && my <= by + th) {
-            (stateRef.current as Record<string, unknown>)[key] = !(stateRef.current[key] as boolean);
+            (stateRef.current[key] as boolean) = !(stateRef.current[key] as boolean);
             setTick((t) => t + 1);
           }
         });
@@ -3884,14 +3882,15 @@ export default function KineticSouls() {
 
     const handleTouchStart = (e: TouchEvent) => {
       e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
       const touch = e.touches[0];
-      const tx = (touch.clientX - rect.left) * (canvas.width / rect.width);
-      const ty = (touch.clientY - rect.top) * (canvas.height / rect.height);
       if (screenRef.current === "game") {
+        const rect = canvas.getBoundingClientRect();
+        const tx = (touch.clientX - rect.left) * (canvas.width / rect.width);
         if (tx < ARENA_W / 2) spawnP1();
         else spawnP2();
+        return;
       }
+      handleClick({ clientX: touch.clientX, clientY: touch.clientY } as MouseEvent);
     };
 
     canvas.addEventListener("mousemove", handleMouseMove);
@@ -4130,7 +4129,7 @@ export default function KineticSouls() {
             {(["standard", "tank", "assassin", "giant", "mage", "necromancer"] as KineticType[]).map((kt) => (
               <button
                 key={kt}
-                onClick={() => setBirthType(kt)}
+                onClick={() => { setBirthType(kt); refs.birthType.current = kt; }}
                 style={{
                   background: birthType === kt ? "#00aa44" : "rgba(80,80,100,0.8)",
                   color: "#fff",
