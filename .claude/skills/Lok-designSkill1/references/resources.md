@@ -4,6 +4,37 @@ Organized by category. Each entry: link, what it is, and when to reach for it.
 Add new entries under the right category, or start a new category (add it to
 the list in SKILL.md too) if nothing fits.
 
+## Lok ecosystem quick map
+
+Confirmed by reading `package.json` in each repo (2026-08-15), not guessed:
+
+- **LokBook** ([mistachatty-cmyk/LokBook](https://github.com/mistachatty-cmyk/LokBook)) — hand-drawn flipbook social app. Already depends on `gsap`, `perfect-freehand`, `@supabase/supabase-js`, `@tauri-apps/*`, `vite-plugin-pwa`, `qrcode`.
+- **LokLingu** ([mistachatty-cmyk/LokLingu](https://github.com/mistachatty-cmyk/LokLingu)) — language-learning app with voice mode + character-drawing mode. Monorepo using Zod, Drizzle ORM, Radix UI, Framer Motion (via the `Motion` entry below), Tailwind.
+- **Lok-EcoSystsem** ("LokServices") — shared backend/eco-system repo (Supabase-backed).
+
+The entries below marked **(already in use)** are things these apps already
+depend on — kept here so future sessions know the pattern exists before
+reinventing it. Everything else is a candidate to pull in.
+
+---
+
+## Claude / agent efficiency
+
+- **[claude-cookbooks](https://github.com/anthropics/claude-cookbooks)** —
+  Anthropic's official worked examples: prompt caching, tool use, agents,
+  retrieval, evaluation. Use when optimizing token/cost efficiency, building
+  a new agentic feature, or checking the "recommended" pattern before hand-
+  rolling one.
+- **[claude-agent-sdk-python](https://github.com/anthropics/claude-agent-sdk-python)**
+  / **[claude-agent-sdk-typescript](https://github.com/anthropics/claude-agent-sdk-typescript)**
+  — Official SDKs for building custom Claude-powered agents outside Claude
+  Code itself. Use if a Lok app ever needs its own embedded agent (e.g. an
+  in-app assistant) rather than calling the API by hand.
+- For general "what's the current best way to do X with Claude/the API"
+  questions (pricing, caching, streaming, tool schemas), prefer the built-in
+  **`claude-api`** skill already installed in this environment over
+  re-deriving it here — it's kept current independently of this catalog.
+
 ---
 
 ## 3D / Three.js
@@ -35,6 +66,11 @@ the list in SKILL.md too) if nothing fits.
   index of animation-related repos across languages/frameworks. Use as a
   starting point to discover options when nothing else in this list fits the
   specific need.
+- **[GSAP](https://github.com/greensock/GSAP)** *(already in use — LokBook)*
+  — Industry-standard JS animation/timeline engine, framework-agnostic. Use
+  for anything LokBook's existing GSAP timelines could extend (Battle/Rush
+  sequencing, transitions), and as the default choice for complex, precisely
+  sequenced non-React animation elsewhere.
 
 ## Animation (mobile / native)
 
@@ -54,6 +90,74 @@ the list in SKILL.md too) if nothing fits.
   transitions for traditional multi-page websites (no SPA framework
   required). Use when a static/multi-page site needs fluid transitions
   between full page loads.
+
+---
+
+## Hand-drawn / freehand canvas rendering
+
+- **[perfect-freehand](https://github.com/steveruizok/perfect-freehand)**
+  *(already in use — LokBook)* — Generates natural, pressure-sensitive
+  freehand strokes from input points; this is what powers LokBook's Studio
+  drawing and the `.lok` format's stroke data. Reference before touching
+  `src/engine/` drawing code or `LOK_PERFECT_FREEHAND_SPEC.md`.
+- **[rough.js](https://github.com/rough-stuff/rough)** — Renders shapes/
+  fills in a hand-drawn, sketchy style on canvas or SVG. Use for sketchy UI
+  chrome or bot-drawn art that should look intentionally imperfect (e.g.
+  LokBook's Battle bots), as a lighter alternative to hand-authoring that
+  look with perfect-freehand.
+- **[Excalidraw](https://github.com/excalidraw/excalidraw)** — Full
+  hand-drawn-style whiteboard app/engine, open source. Use as a reference
+  implementation for infinite-canvas UX, shape tools, or collaborative
+  drawing features beyond what perfect-freehand alone covers.
+- **[tldraw](https://github.com/tldraw/tldraw)** — Infinite-canvas SDK
+  (drag/resize/select/multiplayer primitives) for React. Use if a Lok app
+  ever needs a full canvas editor shell rather than a single fixed drawing
+  surface — heavier than react-konva, but comes with the editor UX built in.
+
+---
+
+## Handwriting & character-stroke practice
+
+- **[hanzi-writer](https://github.com/chanind/hanzi-writer)** — Animates
+  correct stroke order and scores user-drawn strokes for CJK characters.
+  Directly relevant to LokLingu's Draw Mode ("dynamic stroke matching") —
+  check this before building custom stroke-scoring logic, especially for
+  any CJK-language lessons.
+
+---
+
+## Data schema & ORM
+
+- **[Zod](https://github.com/colinhacks/zod)** *(already in use — LokLingu,
+  `lib/api-zod`)* — TypeScript-first schema validation. Use for any new
+  API payload or form-input validation in LokLingu or Lok-EcoSystsem so it
+  stays consistent with the existing shared schemas.
+- **[Drizzle ORM](https://github.com/drizzle-team/drizzle-orm)** *(already
+  in use — LokLingu, `lib/db`)* — Lightweight, type-safe SQL ORM. Use for
+  any new Postgres table/query in LokLingu's backend rather than reaching
+  for a different ORM or raw SQL.
+
+---
+
+## UI primitives
+
+- **[Radix UI](https://github.com/radix-ui/primitives)** *(already in use —
+  LokLingu)* — Unstyled, accessible React component primitives (dialogs,
+  dropdowns, tooltips, etc.). Use for any new interactive component in
+  LokLingu so accessibility and behavior stay consistent with existing UI.
+
+---
+
+## Desktop & installable-web packaging
+
+- **[Tauri](https://github.com/tauri-apps/tauri)** *(already in use —
+  LokBook, Steam build)* — Rust-backed desktop app shell, much lighter than
+  Electron. Reference for anything touching LokBook's `tauri:dev` /
+  `tauri:build` / Steam packaging path.
+- **[vite-plugin-pwa](https://github.com/vite-pwa/vite-plugin-pwa)**
+  *(already in use — LokBook)* — Vite plugin for installable/offline PWA
+  support (manifest, service worker). Reference for LokBook's "Add to home
+  screen" flow or any new offline-capable Lok web app.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: Lok-designSkill1
-description: Curated catalog of external reference repos/libraries for design, animation, 3D, data-viz, pixel art, and localization work — a personal "know what tool exists for this" cheat sheet. Consult this whenever the user is starting a design, animation, UI motion, 3D/Three.js, data visualization, sprite/pixel-art, scroll effect, or in-game localization/word-list task, or asks "what's a good library/tool for X" in those areas, even if they don't name a tool directly. Also use it when the user wants to add a new reference resource to their list — this skill's reference file is meant to grow over time. Not tied to any single project; applies across sessions and repos.
+description: Curated catalog of external reference repos/libraries for design, animation, 3D, data-viz, pixel art, localization, and Claude/agent-building efficiency — a personal "know what tool exists for this" cheat sheet, including a stack map of the Lok apps (LokBook, LokLingu, Lok-EcoSystsem/LokServices) so recommendations match what they already depend on. Consult this whenever the user is starting a design, animation, UI motion, 3D/Three.js, data visualization, sprite/pixel-art, hand-drawn canvas, character/stroke-matching, scroll effect, in-game localization/word-list task, or asks "what's a good library/tool for X" in those areas or for Claude/Anthropic API efficiency — even if they don't name a tool directly. Also use it when the user wants to add a new reference resource to their list — this skill's reference file is meant to grow over time. Not tied to any single project; applies across sessions and repos.
 ---
 
 # Lok-designSkill1 — Design & Animation Resource Catalog
@@ -33,9 +33,16 @@ to help the user grow a personal toolbox over time.
 
 ## Categories in the catalog
 
+- Lok ecosystem quick map (what LokBook/LokLingu/Lok-EcoSystsem already use)
+- Claude / agent efficiency
 - 3D / Three.js
 - Animation (web & general JS)
 - Animation (mobile / native)
+- Hand-drawn / freehand canvas rendering
+- Handwriting & character-stroke practice
+- Data schema & ORM
+- UI primitives
+- Desktop & installable-web packaging
 - Scroll & page transition effects
 - Data visualization
 - Pixel art & sprite tooling
@@ -44,4 +51,6 @@ to help the user grow a personal toolbox over time.
 - Claude / AI-assisted design references
 
 See `references/resources.md` for the full list with descriptions and "use
-when" guidance for each entry.
+when" guidance for each entry. Entries tagged **(already in use)** mean a Lok
+app already depends on that library — check current usage before adding a
+competing one.
