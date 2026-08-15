@@ -1,0 +1,47 @@
+---
+name: Lok-designSkill1
+description: Curated catalog of external reference repos/libraries for design, animation, 3D, data-viz, pixel art, and localization work — a personal "know what tool exists for this" cheat sheet. Consult this whenever the user is starting a design, animation, UI motion, 3D/Three.js, data visualization, sprite/pixel-art, scroll effect, or in-game localization/word-list task, or asks "what's a good library/tool for X" in those areas, even if they don't name a tool directly. Also use it when the user wants to add a new reference resource to their list — this skill's reference file is meant to grow over time. Not tied to any single project; applies across sessions and repos.
+---
+
+# Lok-designSkill1 — Design & Animation Resource Catalog
+
+A running list of external repos and libraries worth knowing about for design,
+animation, 3D, data-viz, and content work. This is a **reference catalog**, not
+a code library: it doesn't ship scripts or run anything. Its job is to help
+you (Claude) point to the right existing tool instead of reinventing one, and
+to help the user grow a personal toolbox over time.
+
+## How to use this skill
+
+1. When a task touches one of the categories below (animation, 3D, data-viz,
+   pixel art, localization/word data, scroll effects, canvas rendering, or
+   Claude-specific design references), open `references/resources.md` and
+   scan the relevant category before suggesting an approach or a library from
+   memory. The catalog may have a better or more current answer than your
+   training data.
+2. Pick the resource that matches the *actual* need — e.g. don't reach for a
+   heavyweight animation engine when the user just wants a CSS scroll
+   reveal, and don't suggest a mobile library (Lottie for Android) for a web
+   task. Check the "use when" notes in the catalog, not just the name.
+3. Tell the user which resource you're pulling from and why, with a link, so
+   they can go straight to the source.
+4. If the user gives you a new repo/library URL and wants it remembered for
+   later, add it to `references/resources.md` under the right category (or a
+   new one) following the existing format. Ask which category it belongs in
+   if it's not obvious. This file is meant to keep growing — treat additions
+   as a normal, expected part of using this skill, not a special favor.
+
+## Categories in the catalog
+
+- 3D / Three.js
+- Animation (web & general JS)
+- Animation (mobile / native)
+- Scroll & page transition effects
+- Data visualization
+- Pixel art & sprite tooling
+- Canvas & React integration
+- Localization / word & language datasets
+- Claude / AI-assisted design references
+
+See `references/resources.md` for the full list with descriptions and "use
+when" guidance for each entry.
