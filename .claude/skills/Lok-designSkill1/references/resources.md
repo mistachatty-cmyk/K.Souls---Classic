@@ -181,11 +181,39 @@ reinventing it. Everything else is a candidate to pull in.
   - **Don't use for**: the actual drawing surface in LokBook's Studio —
     that's perfect-freehand's job (see above); Canvas UI is for effects
     *around* content, not freehand input capture.
-  - **Caveat**: built on the `html-in-canvas` browser API, which is
-    experimental (Chrome origin trial only, as of when this was added).
-    Components detect support at runtime and fall back to plain HTML
-    automatically, so it's safe to use, but don't promise WebGL-effect
-    parity across all browsers without checking current support.
+  - **Caveat — browser support**: built on the `html-in-canvas` browser
+    API, which is experimental. Locally it needs Chrome with the
+    `chrome://flags/#canvas-draw-element` flag enabled; in production it
+    needs the site registered for Chrome's origin trial (token served via
+    meta tag or HTTP header, domain-bound — canvasui.dev's own token only
+    works for canvasui.dev, a Lok domain would need its own). Components
+    detect support at runtime and fall back to plain HTML automatically —
+    safe to ship, but don't promise WebGL-effect parity across browsers/
+    users without the trial token set up.
+  - **Caveat — framework versions**: React components target **React 19**,
+    Solid 1.9, Preact 10, Vue 3.5, Svelte 5. LokBook is currently on
+    **React 18.3.1** — check for a version bump or React-19-specific
+    breakage before installing a React Canvas UI component there; LokLingu
+    isn't confirmed on React 19 either, so check its version too.
+    TypeScript is recommended since components ship as typed source.
+  - **Install (CLI, per framework)**:
+    ```sh
+    npx shadcn@latest init          # once per project, if not already using shadcn
+    npx shadcn@latest add @canvas-ui/liquid-react   # or -solid, -preact, -vue, -svelte, -vanilla
+    ```
+    Lands in `components/canvasui/` (Svelte: `src/lib/components/canvasui/`
+    so the `$lib` import resolves). Manual install: copy the framework-
+    specific code block straight from the component's docs page.
+  - **Usage** — wrap the UI the effect should run over, props are live:
+    ```tsx
+    import { Liquid } from "@/components/canvasui/Liquid";
+    <Liquid rainbow style={{ height: 480 }}><YourContent /></Liquid>
+    ```
+  - **MCP server**: Canvas UI also ships an MCP server
+    (https://canvasui.dev/docs/mcp) — worth setting up if Claude sessions
+    working on Lok apps end up installing/configuring these components
+    often, so it can query the registry directly instead of relying on
+    this catalog entry going stale.
 
 ---
 
