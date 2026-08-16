@@ -209,11 +209,30 @@ reinventing it. Everything else is a candidate to pull in.
     import { Liquid } from "@/components/canvasui/Liquid";
     <Liquid rainbow style={{ height: 480 }}><YourContent /></Liquid>
     ```
-  - **MCP server**: Canvas UI also ships an MCP server
-    (https://canvasui.dev/docs/mcp) — worth setting up if Claude sessions
-    working on Lok apps end up installing/configuring these components
-    often, so it can query the registry directly instead of relying on
-    this catalog entry going stale.
+  - **MCP server** (https://canvasui.dev/docs/mcp): the `@canvas-ui`
+    namespace works with the general **shadcn MCP server**, not a
+    Canvas-UI-specific one — one setup covers every shadcn registry a
+    project uses, not just this one. Set up per-repo (it's a project-level
+    `.mcp`/client config, not something this catalog entry can turn on by
+    itself):
+    ```sh
+    npx shadcn@latest mcp init --client claude   # Claude Code
+    ```
+    Then restart Claude Code and use `/mcp` to confirm the server is up.
+    (Also supports `--client cursor`, `vscode`, `opencode`; Codex is
+    manual — add an `[mcp_servers.shadcn]` block to `~/.codex/config.toml`.)
+    Optional: pin the registry explicitly in the project's
+    `components.json`:
+    ```json
+    { "registries": { "@canvas-ui": "https://canvasui.dev/r/{name}.json" } }
+    ```
+    Once configured, prompts like "show me the components in the
+    @canvas-ui registry" or "add liquid from @canvas-ui to my hero
+    section" let Claude browse/install components directly instead of
+    relying on this catalog entry staying current by hand. Worth doing in
+    a Lok app repo (LokBook, LokLingu) once Canvas UI actually gets used
+    there — no need to set this up in `K.Souls---Classic` or
+    `lokDesignSkill`, since neither installs UI components this way.
 
 ---
 
