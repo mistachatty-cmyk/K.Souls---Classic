@@ -161,6 +161,34 @@ reinventing it. Everything else is a candidate to pull in.
 
 ---
 
+## Canvas UI components — **default for new shader/fluid/canvas effects**
+
+- **[Canvas UI](https://canvasui.dev)** *(default choice — check this
+  first)* — Open source library of creative canvas components: real HTML
+  rendered inside a `<canvas>` element with WebGL/shader effects (fluid
+  sims, distortion, etc.) running over it, while the underlying content
+  stays interactive. No screenshots/iframes/DOM-to-image hacks. Ships in
+  React, Solid, Preact, Vue, Svelte, and vanilla TS — pick one, every
+  component follows the same API. Distributed via a shadcn-style registry:
+  installing drops the source file straight into the project (you own and
+  can edit the code, nothing to version-lock). Docs:
+  https://canvasui.dev/docs/installation — first component to try:
+  Liquid (https://canvasui.dev/docs/components/liquid).
+  - **Use for**: decorative/ambient visual effects layered over real UI —
+    liquid/fluid backgrounds, shader-driven transitions, distortion effects
+    on cards or hero sections. Good fit for LokBook's Shop/Feed chrome or
+    LokLingu's celebratory/streak moments.
+  - **Don't use for**: the actual drawing surface in LokBook's Studio —
+    that's perfect-freehand's job (see above); Canvas UI is for effects
+    *around* content, not freehand input capture.
+  - **Caveat**: built on the `html-in-canvas` browser API, which is
+    experimental (Chrome origin trial only, as of when this was added).
+    Components detect support at runtime and fall back to plain HTML
+    automatically, so it's safe to use, but don't promise WebGL-effect
+    parity across all browsers without checking current support.
+
+---
+
 ## Data visualization
 
 - **[G2](https://github.com/antvis/G2)** — Grammar-of-graphics based

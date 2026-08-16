@@ -31,6 +31,20 @@ to help the user grow a personal toolbox over time.
    if it's not obvious. This file is meant to keep growing — treat additions
    as a normal, expected part of using this skill, not a special favor.
 
+## Defaults for new work
+
+Some entries in the catalog aren't just "an option" — they're the starting
+point unless there's a specific reason not to use them:
+
+- **Canvas UI** (see the catalog entry) is the default for any new
+  fluid/shader/WebGL-over-HTML visual effect across Lok apps — check it
+  before hand-rolling a shader or fluid sim. It renders real interactive
+  HTML underneath the effect and degrades gracefully where the underlying
+  browser API isn't supported yet, so reaching for it doesn't risk breaking
+  the app for users on unsupported browsers. It's for decorative/ambient
+  effects layered over UI, not a replacement for LokBook's core
+  perfect-freehand drawing engine.
+
 ## Categories in the catalog
 
 - Lok ecosystem quick map (what LokBook/LokLingu/Lok-EcoSystsem already use)
@@ -43,6 +57,7 @@ to help the user grow a personal toolbox over time.
 - Data schema & ORM
 - UI primitives
 - Desktop & installable-web packaging
+- Canvas UI components (default for shader/fluid/WebGL-over-HTML effects)
 - Scroll & page transition effects
 - Data visualization
 - Pixel art & sprite tooling
