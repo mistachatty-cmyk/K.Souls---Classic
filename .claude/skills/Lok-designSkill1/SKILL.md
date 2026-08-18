@@ -1,6 +1,6 @@
 ---
 name: Lok-designSkill1
-description: Curated catalog of external reference repos/libraries for design, animation, 3D, data-viz, pixel art, localization, and Claude/agent-building efficiency — a personal "know what tool exists for this" cheat sheet, including a stack map of the Lok apps (LokBook, LokLingu, Lok-EcoSystsem/LokServices) so recommendations match what they already depend on. Consult this whenever the user is starting a design, animation, UI motion, 3D/Three.js, data visualization, sprite/pixel-art, hand-drawn canvas, character/stroke-matching, scroll effect, in-game localization/word-list task, or asks "what's a good library/tool for X" in those areas or for Claude/Anthropic API efficiency — even if they don't name a tool directly. Also use it when the user wants to add a new reference resource to their list — this skill's reference file is meant to grow over time. Not tied to any single project; applies across sessions and repos.
+description: Curated catalog of external reference repos/libraries for design, animation, 3D, data-viz, pixel art, localization, and Claude/agent-building efficiency, PLUS an active Design Director workflow (benchmark analysis of reference images/styles, a Creator-Critic-Validator loop, and structured image-generation / motion-graphic-storyboard prompts) for turning design requests into professional, non-generic output. Consult this whenever the user is starting a design, animation, UI motion, 3D/Three.js, data visualization, sprite/pixel-art, hand-drawn canvas, character/stroke-matching, scroll effect, in-game localization/word-list task, wants something designed/critiqued/mocked-up, hands over a reference image/screenshot/brand style to match, asks for an image-generation prompt (Midjourney/DALL-E/Stable Diffusion) or a motion graphic storyboard, or asks "what's a good library/tool for X" in those areas or for Claude/Anthropic API efficiency — even if they don't name a tool directly. Also use it when the user wants to add a new reference resource to their list — this skill's reference file is meant to grow over time. Not tied to any single project; applies across sessions and repos.
 ---
 
 # Lok-designSkill1 — Design & Animation Resource Catalog
@@ -30,6 +30,67 @@ to help the user grow a personal toolbox over time.
    new one) following the existing format. Ask which category it belongs in
    if it's not obvious. This file is meant to keep growing — treat additions
    as a normal, expected part of using this skill, not a special favor.
+
+## Design Director mode
+
+The catalog above answers "what tool exists for this." This section is
+about *how to think* when the task is actually producing a design — a
+layout, a UI concept, an image-generation prompt, or a motion-graphic
+storyboard — rather than picking a library. Apply it whenever a request is
+asking you to create or critique something visual, not just look something
+up. It doesn't require the user to say a magic phrase first; treat it as
+how this skill designs by default.
+
+The point of all three rules below is the same: generic output happens when
+a model guesses at "good design" from vibes instead of grounding itself in
+either a real reference or a real critique pass. Each rule closes one of
+those gaps.
+
+**1. Benchmark before you guess.** If the user hands you a reference image,
+link, or named brand/style, don't eyeball it and move on — actually break
+it down before producing anything: type (weights, tracking, scale
+relationships), exact color values (not "blue," the hex), spacing/
+whitespace rhythm, elevation/shadow use, and hierarchy (what draws the eye
+first, second, third). Name these specifics back to the user as part of
+your output, not just silently in your head — it's how they can tell you
+actually looked rather than pattern-matched to "modern minimal app."
+Without a reference, say so and pick a defensible direction instead of
+inventing a fake benchmark.
+
+**2. Critique your own first draft before showing it.** Don't ship the
+first thing you generate. Run it through three passes internally:
+  - *Creator* — produce the initial layout/concept/prompt.
+  - *Critic* — read your own output the way a design lead would: is the
+    letter-spacing doing something intentional or just default? Is there
+    an actual hierarchy or is everything competing for attention? Is this
+    specific to the brief, or would it look the same for any brand ("AI
+    slop")? Name the concrete problems, not a vague "could be better."
+  - *Validator* — fix what the critique surfaced, and only stop once the
+    result would hold up if a real designer reviewed it, not just "looks
+    fine at a glance."
+  You don't need to narrate all three passes to the user — show the
+  refined result, and mention the direction you rejected only when it's
+  useful context (e.g. "went bolder on the headline than a typical AI
+  layout would, since your reference uses hierarchy aggressively").
+
+**3. Image-gen and motion prompts need the same specificity.** When asked
+for an image-generation prompt (Midjourney/DALL-E/Stable Diffusion/local
+models), don't hand back a vague mood description — write a prompt that
+locks in style, lighting, composition, and any established "look" (a named
+aesthetic/style recipe from earlier in the conversation) so repeated
+prompts stay consistent with each other. For motion graphics, break the
+result into a frame-by-frame or beat-by-beat storyboard with actual timing
+(seconds), easing (ease-in/out, spring, linear — and why), and transition
+types between beats — enough that someone could hand it to an animator
+without follow-up questions.
+
+**When the deliverable is a real artboard, not just a description or
+prompt** — a UI mockup, landing page, poster, invitation layout, or similar
+— use the **`design`** skill (Claude Design canvas) to actually produce it
+as an editable artboard, applying the benchmark/critique process above
+before you generate it. For static poster/art-style output, `canvas-design`
+is the equivalent for PNG/PDF art. This skill supplies the judgment; those
+skills supply the output format.
 
 ## Defaults for new work
 
