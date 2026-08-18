@@ -1,6 +1,6 @@
 ---
 name: Lok-designSkill1
-description: Curated catalog of external reference repos/libraries for design, animation, 3D, data-viz, pixel art, localization, and Claude/agent-building efficiency, PLUS an active Design Director workflow (benchmark analysis of reference images/styles, a Creator-Critic-Validator loop, and structured image-generation / motion-graphic-storyboard prompts) for turning design requests into professional, non-generic output. Consult this whenever the user is starting a design, animation, UI motion, 3D/Three.js, data visualization, sprite/pixel-art, hand-drawn canvas, character/stroke-matching, scroll effect, in-game localization/word-list task, wants something designed/critiqued/mocked-up, hands over a reference image/screenshot/brand style to match, asks for an image-generation prompt (Midjourney/DALL-E/Stable Diffusion) or a motion graphic storyboard, or asks "what's a good library/tool for X" in those areas or for Claude/Anthropic API efficiency — even if they don't name a tool directly. Also use it when the user wants to add a new reference resource to their list — this skill's reference file is meant to grow over time. Not tied to any single project; applies across sessions and repos.
+description: Curated catalog of external reference repos/libraries for design, animation, 3D, data-viz, pixel art, localization, and Claude/agent-building efficiency, PLUS an active Design Director workflow (benchmark analysis of reference images/styles, a Creator-Critic-Validator loop, and structured image-generation / motion-graphic-storyboard prompts) for turning design requests into professional, non-generic output. Consult this whenever the user is starting a design, animation, UI motion, 3D/Three.js, data visualization, sprite/pixel-art, hand-drawn canvas, character/stroke-matching, scroll effect, in-game localization/word-list task, wants something designed/critiqued/mocked-up, hands over a reference image/screenshot/brand style to match, asks for an image-generation prompt (Midjourney/DALL-E/Stable Diffusion) or a motion graphic storyboard — including open-ended requests like "help me generate images" or "I need some art for X" with no brief yet, where this skill offers ready fill-in templates instead of guessing — or asks "what's a good library/tool for X" in those areas or for Claude/Anthropic API efficiency — even if they don't name a tool directly. Also use it when the user wants to add a new reference resource to their list — this skill's reference file is meant to grow over time. Not tied to any single project; applies across sessions and repos.
 ---
 
 # Lok-designSkill1 — Design & Animation Resource Catalog
@@ -83,6 +83,16 @@ result into a frame-by-frame or beat-by-beat storyboard with actual timing
 (seconds), easing (ease-in/out, spring, linear — and why), and transition
 types between beats — enough that someone could hand it to an animator
 without follow-up questions.
+
+If the request is open-ended — "help me generate images," "I need some art
+for X," anything without a specific brief yet — don't wait for the user to
+structure it themselves. Open `references/image-prompt-templates.md` and
+offer the matching fill-in-the-blank template (general image, recurring
+character/mascot, UI/product asset, or motion keyframe), filled in with
+your best guess from context and confirmed with the user, rather than
+either interrogating them for every field or generating from one vague
+sentence. Add a new template there if a recurring shape of request doesn't
+fit the existing four.
 
 **When the deliverable is a real artboard, not just a description or
 prompt** — a UI mockup, landing page, poster, invitation layout, or similar
