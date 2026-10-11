@@ -1,5 +1,14 @@
 # Kinetic Souls — build & feature audit (Oct 2026)
 
+> **CORRECTION (later in session):** Classic's source *is* in git: `K.Souls---Classic` branch `main`
+> (`src/pages/KineticSouls.tsx`, 5,346 lines / 210 KB, "1v1 AUTO BATTLE ARENA" menu). It is the same game family as the
+> August single-file game (`master`, 142 KB), which is a **smaller, older-style fork missing most features**
+> (no Classic menu, no rich Live Mods panel, no replay/focus cam, etc.). The "modular v0.0.8" folder inside the
+> Vercel upload is an extra copy of project files, not the served game. **Decision (owner): Classic = main build,
+> named "Kinetic Souls (Classic)". Work lives in `classic/` on this branch.** See `classic/README.md`.
+> The Aug single-file game and its menu fixes (below) are kept for reference only.
+
+
 Scope: GitHub repos `K.Souls---Classic`, `Kinetic-Souls`, Vercel deployments, gsix.online pages.
 **Not yet audited:** the local folders `C:\Kinetic Souls -`, `C:\Kinetic-Souls`, `C:\K.Souls---Classic` (not reachable from the cloud session; push them to branches or upload zips).
 
