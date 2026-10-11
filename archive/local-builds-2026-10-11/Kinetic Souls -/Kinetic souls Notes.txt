@@ -1,0 +1,67 @@
+Kinetic souls Notes
+
+
+I love this! CHange Necromancy to have zombie to spawn on Narrator: Fantasy
+
+
+
+Lets add four directors 2 the game that narrate or effect the game. Manually or on purpose. Each director. HAving a personality theme and style limiting them to certain modifications on the game. From bosses, to nights out where they turn the screen black. and when it's back on  there's a random drop on screen
+
+Please make the live lok menu turn off after each match. ALso please make it draggable
+
+Please make a optional test version of it.
+
+
+
+Make 1 test version that makes it transparent background or makes it so that you can see the game while playing it.
+
+Please create another version that has the menu  under the score board for easy acess thinkof mutliple intuitive ways to hadle it then offer them as options to show me.
+
+
+
+Treat drops differnt in the menu. Make them all isntantly clickable  like the bombs
+
+
+
+Add super bomb, add medium bomb. Add healer bomb, addsemtex bomb that explodes after 6 seoconds. with a chance to not go off. ALso give it a chance to have a delayed explosion up to 12 more seconds after 6 seconds. exploding at any time after that. if it hasn't exploded by the end of the duration it will either explode, become a dud or continue the cycle. every time it completes a cycles theres a 20% decrease in the chance it will explode until zero.
+
+
+
+MAke themes based on holidays and other games please, please make sponsor themese as well.
+
+
+
+Keep the current bosses but make them the version you mentioned and make them more speical and name them boss's in the menu. The origianl one's you made should simply be special variants of  normal kinetics.
+
+
+
+Can you fix that dotted line and backround? i keep asking and they are simply not aligned there missed alighned! 
+
+
+
+Also add touch features on both sides for both teams. make everything intuitive and efficent. also be creative and smart
+
+
+
+Lets prototype the beastiary to give a description of all kinetics
+
+Add a snake event - Plan this out and lets come up with ideas. I imagin this being like the class ic snake games
+
+Make , "Classic Customs" a customizer to idnivisually cutsomize what your  kinetic team looks like.
+
+Generate a few customizations
+
+Also Add slight show environment, Add freeze, 
+
+
+Add a function  so that the dotted bar in the middle of the maps can be directly tied to events called 
+
+
+
+
+KMW Cache, FLash storage,  K&V quantum cache - context limits, turbo qunat , paige cashe
+
+
+
+How can I implement the actual "passport.username" into the GameState so the scoreboard reflects my real user name?
+Can we add a new unique KineticType modifier to the game loop?

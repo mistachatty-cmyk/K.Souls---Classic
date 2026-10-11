@@ -1,0 +1,159 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Install Dependencies",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["install"],
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "Typecheck",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["run", "typecheck"],
+      "problemMatcher": ["$tsc"],
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "Build All",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["run", "build"],
+      "problemMatcher": ["$tsc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Dev: Kinetic Souls Game",
+      "type": "shell",
+      "command": "sh",
+      "args": ["-c", "cd artifacts/kinetic-souls && PORT=5173 BASE_PATH=/ pnpm run dev"],
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^.*$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*VITE.*ready.*",
+          "endsPattern": "^.*$"
+        }
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": false
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Dev: API Server",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["--filter", "@workspace/api-server", "run", "dev"],
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^.*$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*listening.*",
+          "endsPattern": "^.*$"
+        }
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": false
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Build: Kinetic Souls",
+      "type": "shell",
+      "command": "sh",
+      "args": ["-c", "cd artifacts/kinetic-souls && PORT=5173 BASE_PATH=/ pnpm run build"],
+      "problemMatcher": ["$tsc"],
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "Serve: Kinetic Souls (Production Preview)",
+      "type": "shell",
+      "command": "sh",
+      "args": ["-c", "cd artifacts/kinetic-souls && PORT=5173 BASE_PATH=/ pnpm run serve"],
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^.*$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*Local:.*http.*",
+          "endsPattern": "^.*$"
+        }
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": false
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Share: Build & Show URL",
+      "type": "shell",
+      "command": "sh",
+      "args": ["-c", "cd artifacts/kinetic-souls && PORT=5173 BASE_PATH=/ pnpm run build && echo '\\n📦 Build complete! Output in: artifacts/kinetic-souls/dist/\\n🚀 Next steps:\\n1. Upload dist/ folder to Netlify, Vercel, or GitHub Pages\\n2. Share the URL with testers\\n3. Testers can install as app on mobile:\\n   - Android: Chrome menu → Install app\\n   - iOS: Safari → Share → Add to Home Screen'"],
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Build: API Server",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["--filter", "@workspace/api-server", "run", "build"],
+      "problemMatcher": ["$tsc"],
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    }
+  ]
+}

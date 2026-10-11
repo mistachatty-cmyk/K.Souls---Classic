@@ -1,0 +1,19 @@
+{
+  "name": "workspace",
+  "version": "0.0.0",
+  "license": "MIT",
+  "scripts": {
+    "preinstall": "node -e \"if (!process.env.npm_config_user_agent?.includes('pnpm')) { console.error('Use pnpm instead'); process.exit(1); }\"",
+    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "typecheck:libs": "tsc --build",
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+  },
+  "private": true,
+  "devDependencies": {
+    "@mapbox/node-pre-gyp": "^2.0.3",
+    "@rollup/rollup-win32-x64-msvc": "^4.60.1",
+    "lightningcss": "1.31.1",
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2"
+  }
+}

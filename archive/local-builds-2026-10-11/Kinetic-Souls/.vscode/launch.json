@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug: API Server",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/artifacts/api-server/dist/index.cjs",
+      "restart": true,
+      "console": "integratedTerminal",
+      "env": {
+        "NODE_ENV": "development"
+      },
+      "preLaunchTask": "Build: API Server"
+    },
+    {
+      "name": "Attach to API Server",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}

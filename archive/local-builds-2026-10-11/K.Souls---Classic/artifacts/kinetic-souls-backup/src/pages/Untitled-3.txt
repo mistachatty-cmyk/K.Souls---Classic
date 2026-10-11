@@ -1,0 +1,185 @@
+<div className="mobile-modifier-bar sm:hidden flex justify-around p-2 bg-gray-900 w-full fixed bottom-0 left-0 z-50">
+  <button 
+    className={`p-3 rounded-full select-none touch-none ${godAction === 'area_lock' ? 'bg-blue-500' : 'bg-gray-700'}`}
+    // Use touch events for the "Hold" mechanic
+    onTouchStart={(e) => { e.preventDefault(); setGodAction('area_lock'); }}
+    onTouchEnd={(e) => { e.preventDefault(); setGodAction(null); }}
+    onTouchCancel={(e) => { e.preventDefault(); setGodAction(null); }}
+  >
+    🔒 Lock
+  </button>
+  
+  <button 
+    className={`p-3 rounded-full select-none touch-none ${godAction === 'architect_pen' ? 'bg-green-500' : 'bg-gray-700'}`}
+    onTouchStart={(e) => { e.preventDefault(); setGodAction('architect_pen'); }}
+    onTouchEnd={(e) => { e.preventDefault(); setGodAction(null); }}
+    onTouchCancel={(e) => { e.preventDefault(); setGodAction(null); }}
+  >
+    🚧 Pen
+  </button>
+  
+  <button 
+    className={`p-3 rounded-full select-none touch-none ${godAction === 'marionette' ? 'bg-purple-500' : 'bg-gray-700'}`}
+    onTouchStart={(e) => { e.preventDefault(); setGodAction('marionette'); }}
+    onTouchEnd={(e) => { e.preventDefault(); setGodAction(null); }}
+    onTouchCancel={(e) => { e.preventDefault(); setGodAction(null); }}
+  >
+    🎭 Puppet
+  </button>
+</div>
+const handleTouchStart = (e: TouchEvent) => {
+  e.preventDefault();
+  
+  // If there are no fingers specifically on the canvas, ignore it.
+  if (e.targetTouches.length === 0) return;
+
+  const rect = canvas.getBoundingClientRect();
+  
+  // ONLY look at the first finger that is on the canvas itself
+  const touch = e.targetTouches[0];
+  
+  const tx = (touch.clientX - rect.left) * (canvas.width / rect.width);
+  const ty = (touch.clientY - rect.top) * (canvas.height / rect.height);
+  
+  mouseRef.current.x = tx;
+  mouseRef.current.y = ty;
+  mouseRef.current.isDown = true;
+
+  // ... (The rest of your godAction and spawning logic goes here) ...
+};
+
+const handleTouchMove = (e: TouchEvent) => {
+  e.preventDefault();
+  
+  // Game screen movement tracking
+  if (screenRef.current === "game" && stateRef.current.running && !stateRef.current.paused) {
+    if (e.targetTouches.length === 0) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.targetTouches[0]; // Again, only track canvas touches
+    
+    mouseRef.current.x = (touch.clientX - rect.left) * (canvas.width / rect.width);
+    mouseRef.current.y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+  }
+};
+/**
+ * Main Canvas Render Loop
+ * Ensure this is called via requestAnimationFrame or your primary tick function.
+ */
+const renderCanvas = (canvas, ctx, stateRef, mouseRef, godAction) => {
+  // 1. Clear canvas and draw base game elements (Arena, Characters, etc.)
+  // ... (your existing drawing code) ...
+
+  const state = stateRef.current;
+  const mx = mouseRef.current.x;
+  const my = mouseRef.current.y;
+
+  // 2. Draw God Action Previews while dragging
+  // We check if a touch/click is active AND if we recorded a starting point
+  if (mouseRef.current.isDown && state.dragStartX !== undefined && state.dragStartY !== undefined) {
+    const sx = state.dragStartX;
+    const sy = state.dragStartY;
+
+    ctx.save();
+    
+    // --- AREA LOCK: Draw a selection rectangle ---
+    if (godAction === 'area_lock') {
+      const width = mx - sx;
+      const height = my - sy;
+      
+      // Semi-transparent blue fill with a solid border
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.3)'; 
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)';
+      ctx.lineWidth = 2;
+      
+      ctx.fillRect(sx, sy, width, height);
+      ctx.strokeRect(sx, sy, width, height);
+    } 
+    
+    // --- ARCHITECT PEN: Draw a barrier line preview ---
+    else if (godAction === 'architect_pen') {
+      // Solid green line with rounded caps
+      ctx.strokeStyle = 'rgba(34, 197, 94, 0.8)';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(mx, my);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // 3. Draw final confirmed elements (e.g., existing barriers)
+  // ... (your existing code for drawing state.barriers) ...
+};
+// Process Area Lock selection
+if (godAction === "area_lock" && state.dragStartX !== undefined) {
+   const sx = state.dragStartX;
+   const sy = state.dragStartY;
+   const minX = Math.min(sx, mx), maxX = Math.max(sx, mx);
+   const minY = Math.min(sy, my), maxY = Math.max(sy, my);
+   
+   let capturedCount = 0;
+
+   // 1. Lock the characters
+   for (const c of dataRef.chars.current) {
+      if (!c.dead && c.x >= minX && c.x <= maxX && c.y >= minY && c.y <= maxY) {
+         c.isLocked = true; 
+         c.lockedX = c.x; 
+         c.lockedY = c.y; 
+         c.lockTimer = 3000;
+         capturedCount++;
+      }
+   }
+
+   // 2. OPTIONAL VISUAL EFFECT: Area Lock Confirmation
+   // We respect the Sandbox Philosophy by checking if juice is enabled
+   if (state.juice && state.juice !== "off") {
+      const width = maxX - minX;
+      const height = maxY - minY;
+      
+      // Only spawn effects if a valid box was drawn
+      if (width > 10 && height > 10) {
+         // Use the blue color matching the Area Lock preview
+         const effectColor = "#3b82f6"; 
+         
+         // Spawn an explosion at the 4 corners of the locked area
+         spawnExplosion(minX, minY, effectColor);
+         spawnExplosion(maxX, minY, effectColor);
+         spawnExplosion(minX, maxY, effectColor);
+         spawnExplosion(maxX, maxY, effectColor);
+
+         // If we are on "SUPER" juice and caught someone, add a center burst!
+         if (state.juice === "super" && capturedCount > 0) {
+            const centerX = minX + (width / 2);
+            const centerY = minY + (height / 2);
+            spawnExplosion(centerX, centerY, "#ffd700"); // Gold burst in the middle
+         }
+      }
+   }
+}
+<div className="mobile-modifier-bar sm:hidden flex justify-around p-2 bg-gray-900 w-full fixed bottom-0 left-0 z-50">
+  <button 
+    className={`p-3 rounded-full ${godAction === 'area_lock' ? 'bg-blue-500' : 'bg-gray-700'}`}
+    onClick={() => setGodAction(godAction === 'area_lock' ? null : 'area_lock')}
+  >
+    🔒 Lock
+  </button>
+  
+  <button 
+    className={`p-3 rounded-full ${godAction === 'architect_pen' ? 'bg-green-500' : 'bg-gray-700'}`}
+    onClick={() => setGodAction(godAction === 'architect_pen' ? null : 'architect_pen')}
+  >
+    🚧 Pen
+  </button>
+  
+  <button 
+    className={`p-3 rounded-full ${godAction === 'marionette' ? 'bg-purple-500' : 'bg-gray-700'}`}
+    onClick={() => setGodAction(godAction === 'marionette' ? null : 'marionette')}
+  >
+    🎭 Puppet
+  </button>
+</div>
