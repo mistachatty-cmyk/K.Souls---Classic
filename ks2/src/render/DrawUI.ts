@@ -771,6 +771,20 @@ export function drawClassicMainMenu(
   ctx.fillStyle = "#888";
   ctx.font = "bold 15px monospace";
   ctx.fillText("1 v 1   A U T O   B A T T L E   A R E N A", W / 2, 250);
+
+  // Kinetic Souls 2 badge: keeps the Classic look but is clearly the "2" build
+  ctx.save();
+  ctx.textAlign = "left";
+  ctx.font = "bold 64px monospace";
+  ctx.shadowColor = "rgba(255, 215, 0, 0.8)";
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = "#ffd700";
+  ctx.fillText("2", W / 2 + 112, titleY2);
+  ctx.shadowBlur = 0;
+  ctx.font = "bold 11px monospace";
+  ctx.fillStyle = "rgba(255, 215, 0, 0.85)";
+  ctx.fillText("ALPHA", W / 2 + 114, titleY2 + 16);
+  ctx.restore();
   ctx.fillStyle = "#aaa";
   ctx.font = "bold 16px monospace";
   ctx.fillText("GAME MODE", W / 2, 270);

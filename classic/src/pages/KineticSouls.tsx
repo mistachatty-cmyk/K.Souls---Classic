@@ -3091,7 +3091,7 @@ export default function KineticSouls() {
   const stateRef = useRef<GameState>({
     mode: "timer",
     opponent: "pvp",
-    theme: "classic",
+    theme: "overdrive",
     modifier: "none",
     camera: "static",
     viewMode: "standard",
@@ -3161,7 +3161,7 @@ export default function KineticSouls() {
 
   const refMode = useRef<GameMode>("timer");
   const refOpp = useRef<OpponentMode>("pvp");
-  const refTheme = useRef<ThemeMode>("classic");
+  const refTheme = useRef<ThemeMode>("overdrive");
   const refMod = useRef<LokModifier>("none");
   const refCam = useRef<CameraMode>("static");
   const refView = useRef<ViewMode>("standard");
