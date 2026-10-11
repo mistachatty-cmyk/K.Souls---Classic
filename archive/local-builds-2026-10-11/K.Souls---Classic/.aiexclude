@@ -1,0 +1,20 @@
+# Ignore dependencies
+node_modules/
+**/node_modules/**
+pnpm-lock.yaml
+
+# Ignore build artifacts
+dist/
+**/dist/**
+*.zip
+.vercel/
+
+# Ignore internal tools/configs
+.git/
+.sixth/
+.vscode/
+
+# Ignore large binary files or logs
+*.log
+*.exe
+z

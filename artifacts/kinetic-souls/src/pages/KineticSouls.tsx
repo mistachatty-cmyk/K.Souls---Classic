@@ -2072,6 +2072,30 @@ function drawMainMenu(
 }
 
 // ─── LOK MENU ────────────────────────────────────────────────────────────────
+// Shared LOK menu layout: used by BOTH drawLokMenu and the click handler so the
+// drawn buttons and their hit areas can never drift apart or overlap.
+const LOK_BTN_W = 130, LOK_BTN_H = 24, LOK_BTN_GAP = 5, LOK_ROW_GAP = 3;
+const LOK_LAYOUT = {
+  theme: { x: 20, y: 58, perCol: 5 },
+  mod: { x: 20, y: 240, perCol: 5 },
+  env: { x: 320, y: 240, perCol: 4 },
+  cam: { x: 730, y: 58, perCol: 4 },
+  wep: { x: 730, y: 190, perCol: 4 },
+  view: { x: 730, y: 322, perCol: 3 },
+} as const;
+type LokSectionKey = keyof typeof LOK_LAYOUT;
+function lokButtonRect(key: LokSectionKey, i: number) {
+  const L = LOK_LAYOUT[key];
+  const col = Math.floor(i / L.perCol);
+  const row = i % L.perCol;
+  return {
+    x: L.x + col * (LOK_BTN_W + LOK_BTN_GAP),
+    y: L.y + 12 + row * (LOK_BTN_H + LOK_ROW_GAP),
+    w: LOK_BTN_W,
+    h: LOK_BTN_H,
+  };
+}
+
 function drawLokMenu(
   ctx: CanvasRenderingContext2D,
   mode: GameMode,
@@ -2098,8 +2122,7 @@ function drawLokMenu(
     label: string;
     items: { label: string; value: string }[];
     current: string;
-    col: number;
-    row: number;
+    key: LokSectionKey;
   }[] = [
     {
       label: "THEME",
@@ -2131,8 +2154,7 @@ function drawLokMenu(
         { label: "Paper", value: "paper_sketch" },
       ],
       current: theme,
-      col: 0,
-      row: 0,
+      key: "theme",
     },
     {
       label: "MODIFIER",
@@ -2148,8 +2170,7 @@ function drawLokMenu(
         { label: "LoK Bounty", value: "lok_bounty" },
       ],
       current: mod,
-      col: 1,
-      row: 0,
+      key: "mod",
     },
     {
       label: "CAMERA",
@@ -2160,8 +2181,7 @@ function drawLokMenu(
         { label: "Enhanced", value: "enhanced" },
       ],
       current: cam,
-      col: 2,
-      row: 0,
+      key: "cam",
     },
     {
       label: "WEAPONS",
@@ -2172,8 +2192,7 @@ function drawLokMenu(
         { label: "Ranged", value: "ranged_test" },
       ],
       current: wep,
-      col: 2,
-      row: 1,
+      key: "wep",
     },
     {
       label: "ENVIRONMENT",
@@ -2188,8 +2207,7 @@ function drawLokMenu(
         { label: "Blackout", value: "blackout" },
       ],
       current: env,
-      col: 1,
-      row: 1,
+      key: "env",
     },
     {
       label: "VIEW MODE",
@@ -2199,46 +2217,23 @@ function drawLokMenu(
         { label: "Cinematic", value: "cinematic" },
       ],
       current: view,
-      col: 2,
-      row: 2,
+      key: "view",
     },
   ];
 
-  const colW = 290, colGap = 10;
-  const startX = (W - (colW * 3 + colGap * 2)) / 2;
-  const startY = 58;
-  const bh = 24, bw = 130, gap = 5;
-
   for (const sec of sections) {
-    const baseX = startX + sec.col * (colW + colGap);
-    const baseY = startY + sec.row * 170;
-
+    const L = LOK_LAYOUT[sec.key];
     ctx.fillStyle = "rgba(255,255,255,0.6)";
     ctx.font = "bold 11px monospace";
     ctx.textAlign = "left";
-    ctx.fillText(sec.label, baseX, baseY);
+    ctx.fillText(sec.label, L.x, L.y);
 
     sec.items.forEach((item, i) => {
-      const col2 = Math.floor(i / 7);
-      const row2 = i % 7;
-      const bx = baseX + col2 * (bw + gap);
-      const by = baseY + 12 + row2 * (bh + 3);
+      const r = lokButtonRect(sec.key, i);
       const hover =
-        mouse.x >= bx &&
-        mouse.x <= bx + bw &&
-        mouse.y >= by &&
-        mouse.y <= by + bh;
-      drawBtn(
-        ctx,
-        item.label,
-        bx,
-        by,
-        bw,
-        bh,
-        hover,
-        theme,
-        sec.current === item.value,
-      );
+        mouse.x >= r.x && mouse.x <= r.x + r.w &&
+        mouse.y >= r.y && mouse.y <= r.y + r.h;
+      drawBtn(ctx, item.label, r.x, r.y, r.w, r.h, hover, theme, sec.current === item.value);
     });
   }
 
@@ -3735,29 +3730,19 @@ export default function KineticSouls() {
         const allEnvs: Environment[] = ["none","ice","blackhole","lava","storm","bouncy","wrap","blackout"];
         const allViews: ViewMode[] = ["standard","theater","cinematic"];
 
-        const colW = 290, colGap = 10;
-        const startX = (W - (colW * 3 + colGap * 2)) / 2;
-        const startY = 70;
-        const bh2 = 24, bw2 = 130, gap2 = 5;
-
         const sections = [
-          { items: allThemes, col: 0, row: 0, setter: (v: string) => { refs.theme.current = v as ThemeMode; stateRef.current.theme = v as ThemeMode; Object.keys(spriteCache).forEach(k => delete spriteCache[k]); } },
-          { items: allMods, col: 1, row: 0, setter: (v: string) => { refs.mod.current = v as LokModifier; stateRef.current.modifier = v as LokModifier; } },
-          { items: allCams, col: 2, row: 0, setter: (v: string) => { refs.cam.current = v as CameraMode; stateRef.current.camera = v as CameraMode; } },
-          { items: allWeps, col: 2, row: 1, setter: (v: string) => { refs.wep.current = v as WeaponStyle; stateRef.current.weaponStyle = v as WeaponStyle; } },
-          { items: allEnvs, col: 1, row: 1, setter: (v: string) => { refs.env.current = v as Environment; stateRef.current.environment = v as Environment; } },
-          { items: allViews, col: 2, row: 2, setter: (v: string) => { refs.view.current = v as ViewMode; stateRef.current.viewMode = v as ViewMode; } },
+          { key: "theme" as LokSectionKey, items: allThemes, setter: (v: string) => { refs.theme.current = v as ThemeMode; stateRef.current.theme = v as ThemeMode; Object.keys(spriteCache).forEach(k => delete spriteCache[k]); } },
+          { key: "mod" as LokSectionKey, items: allMods, setter: (v: string) => { refs.mod.current = v as LokModifier; stateRef.current.modifier = v as LokModifier; } },
+          { key: "cam" as LokSectionKey, items: allCams, setter: (v: string) => { refs.cam.current = v as CameraMode; stateRef.current.camera = v as CameraMode; } },
+          { key: "wep" as LokSectionKey, items: allWeps, setter: (v: string) => { refs.wep.current = v as WeaponStyle; stateRef.current.weaponStyle = v as WeaponStyle; } },
+          { key: "env" as LokSectionKey, items: allEnvs, setter: (v: string) => { refs.env.current = v as Environment; stateRef.current.environment = v as Environment; } },
+          { key: "view" as LokSectionKey, items: allViews, setter: (v: string) => { refs.view.current = v as ViewMode; stateRef.current.viewMode = v as ViewMode; } },
         ];
 
         for (const sec of sections) {
-          const baseX = startX + sec.col * (colW + colGap);
-          const baseY = startY + sec.row * 170;
           sec.items.forEach((item, i) => {
-            const col2 = Math.floor(i / 7);
-            const row2 = i % 7;
-            const bx = baseX + col2 * (bw2 + gap2);
-            const by = baseY + 12 + row2 * (bh2 + 3);
-            if (mx >= bx && mx <= bx + bw2 && my >= by && my <= by + bh2) {
+            const r = lokButtonRect(sec.key, i);
+            if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
               sec.setter(item);
               setTick((t) => t + 1);
             }
@@ -4150,6 +4135,60 @@ export default function KineticSouls() {
                 }}
               >
                 {kt}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ marginBottom: 6 }}>
+            <span style={{ color: "#aaa" }}>LOK Modifier: </span>
+            {(["none", "sudden_death", "titans", "shrinking_arena", "vampire_kiss", "necromancy", "magnet", "repel", "lok_bounty"] as LokModifier[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => {
+                  refs.mod.current = m;
+                  stateRef.current.modifier = m;
+                  setTick((t) => t + 1);
+                }}
+                style={{
+                  background: stateRef.current.modifier === m ? "#aa33ff" : "rgba(80,80,100,0.8)",
+                  color: "#fff",
+                  border: "none",
+                  padding: "1px 5px",
+                  marginRight: 3,
+                  fontSize: 9,
+                  cursor: "pointer",
+                  borderRadius: 2,
+                  marginBottom: 2,
+                }}
+              >
+                {m.replace(/_/g, " ")}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ marginBottom: 6 }}>
+            <span style={{ color: "#aaa" }}>Environment: </span>
+            {(["none", "ice", "blackhole", "lava", "storm", "bouncy", "wrap", "blackout"] as Environment[]).map((e) => (
+              <button
+                key={e}
+                onClick={() => {
+                  refs.env.current = e;
+                  stateRef.current.environment = e;
+                  setTick((t) => t + 1);
+                }}
+                style={{
+                  background: stateRef.current.environment === e ? "#aa33ff" : "rgba(80,80,100,0.8)",
+                  color: "#fff",
+                  border: "none",
+                  padding: "1px 5px",
+                  marginRight: 3,
+                  fontSize: 9,
+                  cursor: "pointer",
+                  borderRadius: 2,
+                  marginBottom: 2,
+                }}
+              >
+                {e}
               </button>
             ))}
           </div>

@@ -1,0 +1,28 @@
+{
+  "name": "workspace",
+  "version": "0.0.0",
+  "license": "MIT",
+  "main": "desktop.js",
+  "scripts": {
+    "preinstall": "node -e \"process.platform === 'win32' ? require('fs').existsSync('package-lock.json') && require('fs').unlinkSync('package-lock.json') : require('child_process').execSync('rm -f package-lock.json yarn.lock')\" || true",
+    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "typecheck:libs": "tsc --build",
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "app": "electron ."
+  },
+  "private": true,
+  "devDependencies": {
+    "typescript": "~5.9.2"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.60.1",
+    "@swc/core": "^1.15.24",
+    "lightningcss": "^1.32.0",
+    "prettier": "latest"
+  },
+  "dependencies": {
+    "@esbuild/win32-x64": "0.27.3",
+    "@jridgewell/trace-mapping": "^0.3.31",
+    "@tailwindcss/vite": "catalog:"
+  }
+}
