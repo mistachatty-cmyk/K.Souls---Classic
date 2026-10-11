@@ -46,3 +46,7 @@ No Replit env vars (`PORT`, `BASE_PATH`) are needed any more.
 - Sprint 01/05 features (Snarl Construct, Wilderness Grid, Gravity Well, Mitosis, Scrap-Mage,
   Slipstream, Caustic Core, Marionette) are not implemented — specs in `../docs/specs/`.
 - Bundle is a single 5.3k-line file; split into modules after MVP.
+
+## Character models
+Default = original OG **block** characters (square parts, square eyes). The newer rounded/bubbly models are still
+available: Settings -> **Round Characters** (off by default).
