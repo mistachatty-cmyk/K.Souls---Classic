@@ -67,7 +67,7 @@ export function drawWorld(
     ctx.fillStyle = "rgba(255, 215, 0, 0.1)";
     ctx.font = "bold 64px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("KINETIC SOULS", worldX + worldW / 2, worldY + worldH / 2);
+    ctx.fillText("KINETIC SOULS 2", worldX + worldW / 2, worldY + worldH / 2);
     ctx.shadowBlur = 0;
   }
 

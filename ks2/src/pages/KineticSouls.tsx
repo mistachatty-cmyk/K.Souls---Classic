@@ -2172,7 +2172,7 @@ export default function KineticSouls() {
             
             ctx.fillStyle = theme === "gameboy" ? "#0f380f" : theme === "gilded" || theme === "lokmod" ? "#ffd700" : theme === "comic" || theme === "paper_sketch" ? "#000" : "#aaaaaa";
             ctx.font = "bold 22px monospace";
-            ctx.fillText("KINETIC SOULS", ARENA_W / 2, 24);
+            ctx.fillText("KINETIC SOULS 2", ARENA_W / 2, 24);
 
             ctx.fillStyle = theme === "gameboy" ? "#0f380f" : theme === "comic" || theme === "paper_sketch" ? "#000" : "#ffaa00";
             ctx.font = "bold 10px monospace";
