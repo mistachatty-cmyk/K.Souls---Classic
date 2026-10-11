@@ -208,6 +208,7 @@ interface GameState {
   optSmartSpawn: boolean;
   optGrid: boolean;
   optPool: boolean;
+  roundChars: boolean;
   actionCamTeam: number;
   actionCamIndex: number;
   draggingId: number | null;
@@ -363,6 +364,9 @@ function getPartDamage(type: "head" | "body" | "arm" | "leg"): number {
 }
 
 let charIdCounter = 0;
+// Character model style. false = original OG square "block" characters (default);
+// true = the newer rounded/bubbly models (Settings -> "Round Characters").
+let ROUND_CHARS = false;
 
 const ObjectPoolSystem = {
   acquire: <T extends { active: boolean }>(
@@ -1428,6 +1432,27 @@ function drawRawChar(
                   : color;
           
           ctx.fillStyle = partColor;
+
+          if (!ROUND_CHARS) {
+            // OG block characters: every body part is a plain square, head has two square eyes.
+            ctx.shadowBlur = 0;
+            ctx.fillRect(p.ox - p.r, p.oy - p.r, p.r * 2, p.r * 2);
+            if ((theme as string) === "comic") {
+              ctx.strokeStyle = "#000";
+              ctx.lineWidth = 1.5;
+              ctx.strokeRect(p.ox - p.r, p.oy - p.r, p.r * 2, p.r * 2);
+            }
+            if (!flash && p.type === "head") {
+              const t = theme as string;
+              ctx.fillStyle =
+                t === "gsix" || t === "gilded" || t === "vampire" || t === "lokmod" || t === "monochrome" || t === "comic"
+                  ? "#fff"
+                  : t === "gameboy" ? "#0f380f" : "#222";
+              ctx.fillRect(p.ox - 3 * scale, p.oy - 2 * scale, 2 * scale, 3 * scale);
+              ctx.fillRect(p.ox + 1 * scale, p.oy - 2 * scale, 2 * scale, 3 * scale);
+            }
+            continue;
+          }
           
           if (!flash && (theme as string) !== "comic" && (theme as string) !== "paper_sketch") {
              ctx.shadowBlur = 4;
@@ -2521,6 +2546,7 @@ const SETTINGS_TOGGLES: { label: string; key: keyof GameState }[] = [
   { label: "Opt: Cache", key: "optCache" }, { label: "Opt: Delta", key: "optDelta" },
   { label: "Opt: Gravity", key: "optGravity" }, { label: "Opt: Smart Spawn", key: "optSmartSpawn" },
   { label: "Opt: Grid", key: "optGrid" }, { label: "Opt: Pool", key: "optPool" },
+  { label: "Round Characters", key: "roundChars" },
 ];
 const SET_COLS = 4, SET_TW = 200, SET_TH = 26, SET_GAP = 6, SET_Y = 54;
 function settingsButtonRect(i: number) {
@@ -3130,6 +3156,7 @@ export default function KineticSouls() {
     optSmartSpawn: true,
     optGrid: true,
     optPool: true,
+    roundChars: false,
     actionCamTeam: 1,
     actionCamIndex: 0,
     draggingId: null,
@@ -3427,6 +3454,7 @@ export default function KineticSouls() {
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+      ROUND_CHARS = stateRef.current.roundChars;
       const dtRaw = Math.min(timestamp - timeRef.last.current, 50);
       timeRef.last.current = timestamp;
       const screen = screenRef.current;
@@ -4732,6 +4760,7 @@ export default function KineticSouls() {
           if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
             const rec = stateRef.current as unknown as Record<string, unknown>;
             rec[t.key as string] = !(rec[t.key as string] as boolean);
+            if (t.key === "roundChars") Object.keys(spriteCache).forEach((k) => delete spriteCache[k]);
             setTick((tk) => tk + 1);
           }
         });

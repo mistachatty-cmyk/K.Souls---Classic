@@ -2406,7 +2406,7 @@ export default function KineticSouls() {
 
           for (const c of frame.chars) {
             if (c.dead) continue;
-            renderChar(ctx, c, c.flashFrames > 0, 1, state.theme, state.devMode, false, ts);
+            renderChar(ctx, c, c.flashFrames > 0, 1, state.theme, state.devMode, false, ts, (state as any).kineticStyle);
           }
           for (const p of frame.parts) {
             const alpha = Math.max(0, p.life / p.maxLife);
@@ -3281,15 +3281,15 @@ export default function KineticSouls() {
             </button>
             <button
               onClick={() => {
-                const styles = ["classic", "hd", "sabre"];
-                const idx = styles.indexOf((stateRef.current as any).kineticStyle || "classic");
+                const styles = ["block", "classic", "hd", "sabre"];
+                const idx = styles.indexOf((stateRef.current as any).kineticStyle || "block");
                 (stateRef.current as any).kineticStyle = styles[(idx + 1) % styles.length];
                 spriteCacheRef.current.clear(); 
                 setTick(t => t + 1);
               }}
               style={{ background: "rgba(30,30,30,0.8)", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "10px", fontSize: "12px", fontFamily: "monospace", fontWeight: "bold", borderRadius: "8px", cursor: "pointer", backdropFilter: "blur(4px)", flex: 1, touchAction: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
             >
-              ✨ STYLE: {((stateRef.current as any).kineticStyle || "classic").toUpperCase()}
+              ✨ STYLE: {((stateRef.current as any).kineticStyle || "block").toUpperCase()}
             </button>
           </div>
 

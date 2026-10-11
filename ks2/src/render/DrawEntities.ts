@@ -449,7 +449,7 @@ export function drawRawChar(
   theme: ThemeMode,
   devMode: boolean,
   timestamp: number,
-  kineticStyle: "classic" | "hd" | "sabre" = "sabre"
+  kineticStyle: "block" | "classic" | "hd" | "sabre" = "block"
 ) {
   const scale = c.scale;
   const team = c.team;
@@ -735,6 +735,28 @@ export function drawRawChar(
                   ? dark
                   : color;
           
+          if (kineticStyle === "block") {
+            // OG block characters: plain squares + square eyes (round styles remain selectable)
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = partColor;
+            ctx.fillRect(p.ox - p.r, p.oy - p.r, p.r * 2, p.r * 2);
+            if (th === "comic") {
+              ctx.strokeStyle = "#000";
+              ctx.lineWidth = 1.5 * scale;
+              ctx.strokeRect(p.ox - p.r, p.oy - p.r, p.r * 2, p.r * 2);
+            }
+            if (!flash && p.type === "head") {
+              const t2 = th as string;
+              ctx.fillStyle =
+                t2 === "gsix" || t2 === "gilded" || t2 === "vampire" || t2 === "lokmod" || t2 === "monochrome" || t2 === "comic"
+                  ? "#fff"
+                  : t2 === "gameboy" ? "#0f380f" : "#222";
+              ctx.fillRect(p.ox - 3 * scale, p.oy - 2 * scale, 2 * scale, 3 * scale);
+              ctx.fillRect(p.ox + 1 * scale, p.oy - 2 * scale, 2 * scale, 3 * scale);
+            }
+            continue;
+          }
+
           if (kineticStyle === "hd" && !flash) {
             const rSafe = Math.max(0.1, p.r);
             const grd = ctx.createRadialGradient(p.ox - rSafe/3, p.oy - rSafe/3, rSafe/4, p.ox, p.oy, rSafe);
@@ -1079,7 +1101,7 @@ export function getCharSprite(
   flash: boolean,
   theme: ThemeMode,
   devMode: boolean,
-  kineticStyle: "classic" | "hd" | "sabre" = "sabre"
+  kineticStyle: "block" | "classic" | "hd" | "sabre" = "block"
 ): HTMLCanvasElement {
   const key = `${c.team}-${c.scale}-${c.weapon}-${flash}-${theme}-${devMode}-${c.kineticType}-${c.skin}-${c.isBoss}-${kineticStyle}`;
   if (spriteCache[key]) return spriteCache[key];
@@ -1104,7 +1126,7 @@ export function renderChar(
   devMode: boolean,
   useCache: boolean,
   timestamp: number,
-  kineticStyle: "classic" | "hd" | "sabre" = "sabre"
+  kineticStyle: "block" | "classic" | "hd" | "sabre" = "block"
 ) {
   ctx.save();
   ctx.translate(c.x, c.y);

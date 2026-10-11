@@ -33,3 +33,7 @@ Classic-look menu; LOK menu pick (Titans) -> match HUD shows `[MOD: TITANS ...]`
 
 ## Not yet tested / known gaps
 Host/Join Game (network UI), XXL mode, Mobile UI button on a real phone, replay, Boss Rush. See `../docs/ROADMAP.md`.
+
+## Character models
+Default style = **block** (original square characters). The style cycle button (Mobile UI) still offers
+`classic`, `hd` and `sabre` (the newer rounded models). Style is passed through to every character draw call.
