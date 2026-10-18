@@ -1,12 +1,17 @@
-import { spawnCharacter as spawnClassic, renderChar as renderClassic, drawHpBar as hpClassic, drawThemeBackground as backgroundClassic, BESTIARY_ENTRIES as classicBestiary } from "../classic/src/pages/KineticSouls";
-import { spawnCharacter as spawnKs2 } from "../ks2/src/systems/Spawner";
-import { renderChar as renderKs2, drawHpBar as hpKs2 } from "../ks2/src/render/DrawEntities";
+import { spawnCharacter as spawnClassic, renderChar as renderClassic, drawHpBar as hpClassic, drawThemeBackground as backgroundClassic, getPartDamage as classicPartDamage, getWeaponTip as classicWeaponTip, getTeamColor as classicTeamColor, BESTIARY_ENTRIES as classicBestiary } from "../classic/src/pages/KineticSouls";
+import { spawnCharacter as spawnKs2, getPartDamage as ks2PartDamage } from "../ks2/src/systems/Spawner";
+import { renderChar as renderKs2, drawHpBar as hpKs2, getTeamColor as ks2TeamColor } from "../ks2/src/render/DrawEntities";
 import { drawThemeBackground as backgroundKs2, BESTIARY_ENTRIES as ks2Bestiary } from "../ks2/src/render/DrawUI";
+import { getWeaponTip as ks2WeaponTip } from "../ks2/src/game/utils";
+import { updateBehaviors } from "../ks2/src/systems/Behaviors";
+import type { Character as Ks2Character, Drop, GameState, Particle } from "../ks2/src/game/types";
 
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
 type Fighter = ReturnType<typeof spawnClassic> | ReturnType<typeof spawnKs2>;
 type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean };
+type Projectile = { x: number; y: number; vx: number; vy: number; team: number; life: number; type: "laser" | "fireball"; color: string };
+type FloatingText = { x: number; y: number; value: string; color: string; life: number };
 type Options = { variant?: Variant };
 type Settings = { npcSide: 0 | Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; displayHp: boolean; fighter: string };
 
@@ -29,12 +34,17 @@ class PageBattle {
   panel: HTMLElement;
   hud: HTMLElement;
   fighters: Fighter[] = [];
+  projectiles: Projectile[] = [];
+  particles: Particle[] = [];
+  bombs: Drop[] = [];
+  floatingTexts: FloatingText[] = [];
   targets = new Map<Element, Target>();
   damage: { x: number; y: number; width: number; height: number }[] = [];
   running = true;
   paused = false;
   score = 0;
   kills = 0;
+  teamKOs: Record<Side, number> = { 1: 0, 2: 0 };
   startTime = performance.now();
   runId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
   frame = 0;
@@ -97,7 +107,8 @@ class PageBattle {
     for (const element of nodes) {
       if (count > 1800 || this.host.contains(element) || element.closest("#lok-kinetic-official-page")) continue;
       const rect = element.getBoundingClientRect();
-      if (rect.width < 40 || rect.height < 20 || rect.width > innerWidth * 1.5 || rect.bottom < -150 || rect.top > innerHeight + 150) continue;
+      // Break individual pieces of the page, not a full-height layout wrapper.
+      if (rect.width < 40 || rect.height < 20 || rect.width > Math.min(innerWidth * 0.9, 780) || rect.height > 480 || rect.width * rect.height > 210000 || rect.bottom < -150 || rect.top > innerHeight + 150) continue;
       count++;
       if (!this.targets.has(element)) this.targets.set(element, { element, x: 0, y: 0, width: 0, height: 0, damage: 0, destroyed: false });
       const target = this.targets.get(element)!;
@@ -112,7 +123,7 @@ class PageBattle {
     const x = scrollX + (side === 1 ? 44 : innerWidth - 44);
     const y = scrollY + 145 + Math.random() * Math.max(80, innerHeight - 290);
     const entries = this.variant === "classic" ? classicBestiary : ks2Bestiary;
-    const chosen = entries.find(e => e.id === settings.fighter) || entries[0];
+    const chosen = entries.find(e => e.id === settings.fighter && e.role !== "Weapon" && e.role !== "Relic") || entries[0];
     const type = chosen.id as never;
     const fighter = this.variant === "classic"
       ? spawnClassic(side, settings.modifier as never, this.fighters as ReturnType<typeof spawnClassic>[], true, false, settings.weapon as never, settings.speed, x, y, type)
@@ -126,7 +137,13 @@ class PageBattle {
   updateHud() {
     const left = this.fighters.filter(f => !f.dead && f.team === 1).length;
     const right = this.fighters.filter(f => !f.dead && f.team === 2).length;
-    this.hud.innerHTML = `<strong>KINETIC SOULS ${this.variant === "ks2" ? "2 · ALPHA" : "CLASSIC · 1"}</strong><br>Left ${left} · Right ${right} · Breaks ${this.score} · KOs ${this.kills}<br>NPC ${settings.npcSide === 0 ? "off" : settings.npcSide === 1 ? "left" : "right"} · A / L to spawn`;
+    this.hud.innerHTML = `<strong>KINETIC SOULS ${this.variant === "ks2" ? "2 · ALPHA" : "CLASSIC · 1"}</strong><br>Left ${left} · ${this.teamKOs[1]} KOs · Right ${right} · ${this.teamKOs[2]} KOs<br>Page breaks ${this.score} · NPC ${settings.npcSide === 0 ? "off" : settings.npcSide === 1 ? "left" : "right"} · A / L to spawn`;
+  }
+
+  awardKo(fighter: Fighter, team: Side) {
+    if (fighter.dead) return;
+    fighter.dead = true; this.kills++; this.teamKOs[team]++;
+    this.updateHud();
   }
 
   updateNpcButton() {
@@ -148,9 +165,17 @@ class PageBattle {
   };
 
   step(dt: number) {
+    const dtMs = dt * 16.67;
     const minX = 18, maxX = Math.max(innerWidth - 18, document.documentElement.scrollWidth - 18);
     const minY = 85, maxY = Math.max(innerHeight - 18, document.documentElement.scrollHeight - 18);
     const visibleTargets = [...this.targets.values()].filter(t => !t.destroyed && t.x + t.width >= scrollX - 100 && t.x <= scrollX + innerWidth + 100 && t.y + t.height >= scrollY - 100 && t.y <= scrollY + innerHeight + 100);
+    if (this.variant === "ks2" && settings.motion === "battle") {
+      // KS2's standalone AI and fighter abilities operate on document coordinates here.
+      const state = { aiAggressive: true, screensaverMode: false, optGrid: true, optPool: false, modifier: settings.modifier, fighterSpeed: settings.speed, timeScale: 1 } as GameState;
+      updateBehaviors(this.fighters as Ks2Character[], state, dtMs, this.particles, (x, y, value, color) => this.floatingTexts.push({ x, y, value, color, life: 900 }), this.bombs, performance.now());
+      if (this.fighters.length > 120) this.fighters.splice(0, this.fighters.length - 120);
+    }
+    if (this.variant === "classic" && settings.motion === "battle") this.updateClassicAbilities(dtMs);
     for (const fighter of this.fighters) {
       if (fighter.dead) continue;
       if (settings.modifier === "magnet" || settings.modifier === "repel") {
@@ -165,24 +190,25 @@ class PageBattle {
       let nearest: Fighter | undefined;
       let nearestDistance = Infinity;
       for (const enemy of enemies) { const d = Math.hypot(enemy.x - fighter.x, enemy.y - fighter.y); if (d < nearestDistance) { nearest = enemy; nearestDistance = d; } }
-      if (settings.motion === "battle" && nearest && nearestDistance > 35) {
-        const seek = fighter.kineticType === "assassin" || fighter.kineticType === "ninja" ? 0.22 : fighter.kineticType === "tank" ? 0.07 : 0.12;
+      if (this.variant === "classic" && settings.motion === "battle" && nearest && nearestDistance > 35 && fighter.kineticType !== "null" && fighter.stunTime <= 0) {
+        let seek = fighter.isBoss ? 0.35 : 0.2;
+        if (fighter.kineticType === "assassin" || fighter.kineticType === "ninja") seek = 0.45;
+        if (fighter.kineticType === "tank" || fighter.kineticType === "juggernaut") seek = 0.15;
+        if (fighter.kineticType === "giant") seek = 0.1;
+        if (fighter.kineticType === "volatile") seek = 0.6;
         fighter.vx += (nearest.x - fighter.x) / nearestDistance * seek * dt;
         fighter.vy += (nearest.y - fighter.y) / nearestDistance * seek * dt;
-        const speed = Math.hypot(fighter.vx, fighter.vy);
-        if (speed > 8 * settings.speed) { fighter.vx *= 8 * settings.speed / speed; fighter.vy *= 8 * settings.speed / speed; }
-        if ((fighter.weapon === "blaster" || fighter.weapon === "fireball") && nearestDistance < 270 && fighter.cooldown <= 0) {
-          nearest.hp -= fighter.weapon === "fireball" ? 3 : 2;
-          nearest.flashFrames = 5;
-          fighter.cooldown = 45;
-          if (nearest.hp <= 0) { nearest.dead = true; this.kills++; this.updateHud(); }
-        }
       }
-      fighter.cooldown = Math.max(0, fighter.cooldown - dt);
+      const speed = Math.hypot(fighter.vx, fighter.vy);
+      if (speed > 16 * settings.speed) { fighter.vx *= 16 * settings.speed / speed; fighter.vy *= 16 * settings.speed / speed; }
+      fighter.cooldown = Math.max(0, fighter.cooldown - dtMs);
+      if (fighter.stunTime > 0) fighter.stunTime = Math.max(0, fighter.stunTime - dtMs);
       if (settings.environment === "blackhole") { fighter.vx += (scrollX + innerWidth / 2 - fighter.x) * 0.0001; fighter.vy += (scrollY + innerHeight / 2 - fighter.y) * 0.0001; }
       if (settings.environment === "ice") { fighter.vx *= 1.002; fighter.vy *= 1.002; }
       fighter.x += fighter.vx * dt; fighter.y += fighter.vy * dt;
       fighter.angle += fighter.angularV * dt;
+      const drag = settings.environment === "ice" ? 0.998 : settings.environment === "bouncy" ? 1 : 0.985;
+      fighter.vx *= drag; fighter.vy *= drag;
       fighter.flashFrames = Math.max(0, fighter.flashFrames - dt);
       if (settings.environment === "wrap") { if (fighter.x < minX) fighter.x = maxX; if (fighter.x > maxX) fighter.x = minX; }
       else { if (fighter.x < minX || fighter.x > maxX) { fighter.vx *= settings.environment === "bouncy" ? -1.15 : -1; fighter.x = Math.max(minX, Math.min(maxX, fighter.x)); } }
@@ -205,25 +231,137 @@ class PageBattle {
     for (let i = 0; i < this.fighters.length; i++) {
       const a = this.fighters[i]; if (a.dead) continue;
       for (let j = i + 1; j < this.fighters.length; j++) {
-        const b = this.fighters[j]; if (b.dead || a.team === b.team) continue;
-        const dx = b.x - a.x, dy = b.y - a.y, distance = Math.hypot(dx, dy), radius = 15 * (a.scale + b.scale);
-        if (distance > radius || distance < 0.01) continue;
+        const b = this.fighters[j]; if (b.dead) continue;
+        const dx = b.x - a.x, dy = b.y - a.y, distance = Math.hypot(dx, dy), radius = 14 * (a.scale + b.scale) * 0.85;
+        if (distance >= radius || distance < 0.01) continue;
         const nx = dx / distance, ny = dy / distance;
-        const closing = Math.max(1, (a.vx - b.vx) * nx + (a.vy - b.vy) * ny);
-        const weaponBonus = ["hammer", "axe", "scythe", "katana", "mace"].includes(a.weapon) || ["hammer", "axe", "scythe", "katana", "mace"].includes(b.weapon) ? 1.35 : 1;
-        const damage = settings.modifier === "sudden_death" ? 9 : Math.max(0.7, Math.min(6, closing * 0.65)) * weaponBonus;
-        a.hp -= damage / Math.max(0.5, a.mass); b.hp -= damage / Math.max(0.5, b.mass);
-        a.flashFrames = 5; b.flashFrames = 5;
-        const impulse = Math.max(2, closing) * (settings.environment === "bouncy" ? 1.7 : 1);
-        a.vx -= nx * impulse / a.mass; a.vy -= ny * impulse / a.mass;
-        b.vx += nx * impulse / b.mass; b.vy += ny * impulse / b.mass;
-        a.x -= nx * 2; b.x += nx * 2;
-        if (a.hp <= 0) { a.dead = true; this.kills++; if (settings.modifier === "vampire_kiss") b.hp = Math.min(b.maxHp, b.hp + 3); }
-        if (b.hp <= 0) { b.dead = true; this.kills++; if (settings.modifier === "vampire_kiss") a.hp = Math.min(a.maxHp, a.hp + 3); }
-        if (a.dead || b.dead) this.updateHud();
+        const totalMass = Math.max(0.1, a.mass + b.mass), overlap = radius - distance;
+        a.x -= nx * overlap * b.mass / totalMass; a.y -= ny * overlap * b.mass / totalMass;
+        b.x += nx * overlap * a.mass / totalMass; b.y += ny * overlap * a.mass / totalMass;
+        const relativeVelocity = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+        if (relativeVelocity < 0) {
+          const restitution = settings.environment === "bouncy" ? 1.2 : 0.82;
+          const impulse = -(1 + restitution) * relativeVelocity / (1 / a.mass + 1 / b.mass);
+          a.vx -= impulse * nx / a.mass; a.vy -= impulse * ny / a.mass;
+          b.vx += impulse * nx / b.mass; b.vy += impulse * ny / b.mass;
+        }
+        if (settings.motion === "dvd" || a.team === b.team) continue;
+        const partDamage = this.variant === "classic" ? classicPartDamage : ks2PartDamage;
+        const aPart = a.parts[Math.floor(Math.random() * a.parts.length)];
+        const bPart = b.parts[Math.floor(Math.random() * b.parts.length)];
+        const multiplier = Math.min(Math.abs(relativeVelocity) * 0.5, 6);
+        const aDamage = Math.max(0.5, partDamage(aPart?.type || "body") * multiplier);
+        const bDamage = Math.max(0.5, partDamage(bPart?.type || "body") * multiplier);
+        if (a.shieldHp > 0) a.shieldHp -= bDamage; else a.hp -= bDamage;
+        if (b.shieldHp > 0) b.shieldHp -= aDamage; else b.hp -= aDamage;
+        a.flashFrames = 3; b.flashFrames = 3;
+        if (settings.modifier === "vampire_kiss") a.hp = Math.min(a.maxHp, a.hp + 2);
+        if (a.hp <= 0) this.awardKo(a, b.team as Side);
+        if (b.hp <= 0) this.awardKo(b, a.team as Side);
       }
     }
+    this.updateProjectiles(dt, dtMs, visibleTargets);
+    this.updateEffects(dt, dtMs);
     this.fighters = this.fighters.filter(f => !f.dead);
+  }
+
+  updateClassicAbilities(dtMs: number) {
+    for (const fighter of [...this.fighters]) {
+      if (fighter.dead || !["gravity", "vanguard", "weaver", "hivemind"].includes(fighter.kineticType)) continue;
+      fighter.customTimer -= dtMs;
+      if (fighter.customTimer > 0) continue;
+      if (fighter.kineticType === "gravity") {
+        fighter.customTimer = 5000 + Math.random() * 3000;
+        this.bombs.push({ type: "blackhole", x: fighter.x, y: fighter.y, timer: 3000, maxTimer: 3000, active: true, radius: 150 });
+      } else if (fighter.kineticType === "vanguard") {
+        fighter.customTimer = 3000 + Math.random() * 2000;
+        fighter.vx += Math.cos(fighter.angle) * 15; fighter.vy += Math.sin(fighter.angle) * 15;
+      } else if (fighter.kineticType === "weaver") {
+        fighter.customTimer = 4000;
+        for (const ally of this.fighters) if (!ally.dead && ally.team === fighter.team && Math.hypot(ally.x - fighter.x, ally.y - fighter.y) < 150) {
+          ally.hp = Math.min(ally.maxHp, ally.hp + 10);
+          this.floatingTexts.push({ x: ally.x, y: ally.y - 10, value: "+10", color: "#00ff88", life: 900 });
+        }
+      } else if (fighter.kineticType === "hivemind") {
+        fighter.customTimer = 3000;
+        for (let i = 0; i < 2 && this.fighters.length < 120; i++) {
+          const drone = spawnClassic(fighter.team, settings.modifier as never, this.fighters as ReturnType<typeof spawnClassic>[], false, false, "none", settings.speed, fighter.x + (Math.random() - 0.5) * 40, fighter.y + (Math.random() - 0.5) * 40, "zombie");
+          drone.maxHp = 1; drone.hp = 1; drone.scale = 0.6;
+          this.fighters.push(drone);
+        }
+      }
+    }
+  }
+
+  updateProjectiles(dt: number, dtMs: number, visibleTargets: Target[]) {
+    if (settings.motion === "battle") for (const fighter of this.fighters) {
+      if (fighter.dead || fighter.cooldown > 0 || (fighter.weapon !== "blaster" && fighter.weapon !== "fireball")) continue;
+      const nearest = this.fighters.filter(other => !other.dead && other.team !== fighter.team)
+        .sort((a, b) => Math.hypot(a.x - fighter.x, a.y - fighter.y) - Math.hypot(b.x - fighter.x, b.y - fighter.y))[0];
+      if (!nearest || Math.hypot(nearest.x - fighter.x, nearest.y - fighter.y) >= 300) continue;
+      const [x, y] = this.variant === "classic"
+        ? classicWeaponTip(fighter as ReturnType<typeof spawnClassic>)
+        : ks2WeaponTip(fighter as ReturnType<typeof spawnKs2>);
+      const distance = Math.max(1, Math.hypot(nearest.x - x, nearest.y - y));
+      const color = this.variant === "classic"
+        ? classicTeamColor(fighter.team, settings.theme as never, fighter.kineticType as never)
+        : ks2TeamColor(fighter.team, settings.theme as never, fighter.kineticType as never);
+      this.projectiles.push({ x, y, vx: (nearest.x - x) / distance * 5, vy: (nearest.y - y) / distance * 5, life: 1500, team: fighter.team, type: fighter.weapon === "fireball" ? "fireball" : "laser", color });
+      fighter.cooldown = fighter.weapon === "fireball" ? 1800 : 1200;
+    }
+    for (const shot of this.projectiles) {
+      shot.x += shot.vx * dt; shot.y += shot.vy * dt; shot.life -= dtMs;
+      if (shot.life <= 0 || shot.x < 0 || shot.y < 0 || shot.x > document.documentElement.scrollWidth || shot.y > document.documentElement.scrollHeight) continue;
+      // A page element between the teams absorbs a shot and becomes destructible.
+      const target = visibleTargets.find(t => !t.destroyed && shot.x >= t.x && shot.x <= t.x + t.width && shot.y >= t.y && shot.y <= t.y + t.height);
+      if (target) {
+        target.damage += shot.type === "fireball" ? 2.5 : 1.5;
+        shot.life = 0;
+        if (target.damage > Math.max(3, Math.min(12, target.width * target.height / 8000))) {
+          target.destroyed = true; this.score++;
+          this.damage.push({ x: target.x, y: target.y, width: target.width, height: target.height });
+          this.updateHud();
+        }
+        continue;
+      }
+      for (const fighter of this.fighters) {
+        if (fighter.dead || fighter.team === shot.team || Math.hypot(fighter.x - shot.x, fighter.y - shot.y) >= 14 * fighter.scale) continue;
+        const damage = shot.type === "fireball" ? 8 : 5;
+        if (fighter.shieldHp > 0) fighter.shieldHp -= damage; else fighter.hp -= damage;
+        fighter.flashFrames = 5;
+        fighter.vx += shot.vx * 0.5 / fighter.mass; fighter.vy += shot.vy * 0.5 / fighter.mass;
+        shot.life = 0;
+        if (fighter.hp <= 0) this.awardKo(fighter, shot.team as Side);
+        break;
+      }
+    }
+    this.projectiles = this.projectiles.filter(shot => shot.life > 0).slice(-180);
+  }
+
+  updateEffects(dt: number, dtMs: number) {
+    for (const particle of this.particles) {
+      if (!particle.active) continue;
+      particle.x += particle.vx * dt; particle.y += particle.vy * dt;
+      particle.vx *= 0.92; particle.vy *= 0.92;
+      particle.life -= dtMs;
+      if (particle.life <= 0) particle.active = false;
+    }
+    this.particles = this.particles.filter(particle => particle.active).slice(-350);
+    for (const label of this.floatingTexts) { label.y -= 0.45 * dt; label.life -= dtMs; }
+    this.floatingTexts = this.floatingTexts.filter(label => label.life > 0).slice(-80);
+    for (const bomb of this.bombs) {
+      if (!bomb.active) continue;
+      bomb.timer -= dtMs;
+      if (bomb.timer > 0) continue;
+      bomb.active = false;
+      for (const fighter of this.fighters) {
+        if (fighter.dead || Math.hypot(fighter.x - bomb.x, fighter.y - bomb.y) > bomb.radius) continue;
+        if (fighter.shieldHp > 0) fighter.shieldHp -= 5; else fighter.hp -= 5;
+        fighter.flashFrames = 5;
+      }
+    }
+    this.bombs = this.bombs.filter(bomb => bomb.active).slice(-40);
+    for (const fighter of this.fighters) if (!fighter.dead && fighter.hp <= 0) this.awardKo(fighter, fighter.team === 1 ? 2 : 1);
   }
 
   draw(now: number) {
@@ -241,6 +379,20 @@ class PageBattle {
       ctx.restore();
     }
     ctx.save(); ctx.translate(-scrollX, -scrollY);
+    for (const bomb of this.bombs) {
+      if (!bomb.active || bomb.x < scrollX - 160 || bomb.x > scrollX + innerWidth + 160 || bomb.y < scrollY - 160 || bomb.y > scrollY + innerHeight + 160) continue;
+      ctx.strokeStyle = "#b177ff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bomb.x, bomb.y, Math.min(bomb.radius, 18 + (3000 - bomb.timer) * 0.025), 0, Math.PI * 2); ctx.stroke();
+    }
+    for (const shot of this.projectiles) {
+      if (shot.x < scrollX - 20 || shot.x > scrollX + innerWidth + 20 || shot.y < scrollY - 20 || shot.y > scrollY + innerHeight + 20) continue;
+      ctx.fillStyle = shot.color; ctx.beginPath(); ctx.arc(shot.x, shot.y, shot.type === "fireball" ? 6 : 3, 0, Math.PI * 2); ctx.fill();
+    }
+    for (const particle of this.particles) {
+      if (!particle.active || particle.x < scrollX || particle.x > scrollX + innerWidth || particle.y < scrollY || particle.y > scrollY + innerHeight) continue;
+      ctx.globalAlpha = Math.max(0, Math.min(1, particle.life / Math.max(1, particle.maxLife)));
+      ctx.fillStyle = particle.color; ctx.fillRect(particle.x, particle.y, particle.size, particle.size);
+    }
+    ctx.globalAlpha = 1;
     for (const fighter of this.fighters) {
       if (fighter.x < scrollX - 100 || fighter.x > scrollX + innerWidth + 100 || fighter.y < scrollY - 100 || fighter.y > scrollY + innerHeight + 100) continue;
       if (this.variant === "classic") {
@@ -251,6 +403,8 @@ class PageBattle {
         if (settings.displayHp) hpKs2(ctx, fighter as ReturnType<typeof spawnKs2>, settings.modifier as never, false, settings.theme as never);
       }
     }
+    ctx.font = "bold 14px system-ui"; ctx.textAlign = "center";
+    for (const label of this.floatingTexts) { ctx.fillStyle = label.color; ctx.fillText(label.value, label.x, label.y); }
     ctx.restore();
   }
 
@@ -263,9 +417,9 @@ class PageBattle {
     const npc = `<label>NPC team<select data-setting="npcSide"><option value="0" ${settings.npcSide === 0 ? "selected" : ""}>Off · both manual</option><option value="1" ${settings.npcSide === 1 ? "selected" : ""}>Left</option><option value="2" ${settings.npcSide === 2 ? "selected" : ""}>Right</option></select></label>`;
     if (name === "bestiary") {
       const entries = this.variant === "classic" ? classicBestiary : ks2Bestiary;
-      this.panel.innerHTML = `<h2>${this.variant === "classic" ? "Classic" : "KS2"} Bestiary</h2><p class="notice">Choose a fighter for the next spawn.</p>${select("Spawn fighter", "fighter", entries.map(e => e.id))}<div>${entries.map(e => `<div class="entry"><strong style="color:${e.color}">${e.name}</strong><small>${e.role} · HP ${e.hp} · ${e.weapon}</small><div>${e.lore}</div></div>`).join("")}</div>`;
+      this.panel.innerHTML = `<h2>${this.variant === "classic" ? "Classic" : "KS2"} Bestiary</h2><p class="notice">Choose a fighter for the next spawn.</p>${select("Spawn fighter", "fighter", entries.filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<div>${entries.map(e => `<div class="entry"><strong style="color:${e.color}">${e.name}</strong><small>${e.role} · HP ${e.hp} · ${e.weapon}</small><div>${e.lore}</div></div>`).join("")}</div>`;
     } else if (name === "modifiers") {
-      this.panel.innerHTML = `<h2>Live modifiers · M</h2><p class="notice">Changes apply to this live-page battle. The standalone arena has the remaining modifiers.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifiers)}${select("Environment", "environment", environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", this.variant === "classic" ? themes : [...themes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "nebula"])}${select("Fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
+      this.panel.innerHTML = `<h2>Live modifiers · M</h2><p class="notice">Changes apply to this live-page battle. DVD mode bounces without team damage. The standalone arena has the remaining modifiers.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifiers)}${select("Environment", "environment", environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", this.variant === "classic" ? themes : [...themes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "nebula"])}${select("Fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
     } else {
       this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC on ${this.lastNpcSide === 1 ? "left" : "right"}</button><p class="notice">A spawns left. L spawns right. Tapping either side takes manual control; Resume NPC hands it back.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
     }

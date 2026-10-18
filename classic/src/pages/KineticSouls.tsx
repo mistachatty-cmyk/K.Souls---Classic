@@ -663,7 +663,7 @@ export function spawnCharacter(
   };
 }
 
-function getTeamColor(
+export function getTeamColor(
   team: number,
   theme: ThemeMode,
   kType: KineticType = "standard",
@@ -825,7 +825,7 @@ function rotatePoint(ox: number, oy: number, angle: number): [number, number] {
   ];
 }
 
-function getWeaponTip(c: Character): [number, number] {
+export function getWeaponTip(c: Character): [number, number] {
   let reach = 30;
   if (c.weapon === "dagger") reach = 18;
   else if (c.weapon === "spear") reach = 45;
