@@ -108,7 +108,7 @@ class PageBattle {
   }
 
   spawn(side: Side, human: boolean) {
-    if (human && settings.npcSide === side) { this.lastNpcSide = side; settings.npcSide = 0; }
+    if (human && settings.npcSide === side) { this.lastNpcSide = side; settings.npcSide = 0; this.updateNpcButton(); }
     const x = scrollX + (side === 1 ? 44 : innerWidth - 44);
     const y = scrollY + 145 + Math.random() * Math.max(80, innerHeight - 290);
     const entries = this.variant === "classic" ? classicBestiary : ks2Bestiary;
@@ -127,6 +127,11 @@ class PageBattle {
     const left = this.fighters.filter(f => !f.dead && f.team === 1).length;
     const right = this.fighters.filter(f => !f.dead && f.team === 2).length;
     this.hud.innerHTML = `<strong>KINETIC SOULS ${this.variant === "ks2" ? "2 · ALPHA" : "CLASSIC · 1"}</strong><br>Left ${left} · Right ${right} · Breaks ${this.score} · KOs ${this.kills}<br>NPC ${settings.npcSide === 0 ? "off" : settings.npcSide === 1 ? "left" : "right"} · A / L to spawn`;
+  }
+
+  updateNpcButton() {
+    const button = this.panel.querySelector("[data-resume-npc]");
+    if (button) button.textContent = `Resume NPC on ${this.lastNpcSide === 1 ? "left" : "right"}`;
   }
 
   tick = (now: number) => {
@@ -270,6 +275,7 @@ class PageBattle {
       (settings as unknown as Record<string, unknown>)[key] = key === "npcSide" || key === "spawnMs" || key === "speed" ? Number(control.value) : key === "displayHp" ? (control as HTMLInputElement).checked : control.value;
       if (key === "npcSide" && settings.npcSide) this.lastNpcSide = settings.npcSide;
       this.updateHud();
+      this.updateNpcButton();
     }));
     this.panel.querySelector("[data-version]")?.addEventListener("change", event => this.switchVariant((event.currentTarget as HTMLSelectElement).value as Variant));
     this.panel.querySelector("[data-resume-npc]")?.addEventListener("click", () => { settings.npcSide = this.lastNpcSide; this.updateHud(); this.panel.dataset.open = "false"; this.action("settings"); });
