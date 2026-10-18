@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Page battle smoke arena</title>
+<style>body{margin:0;font:18px system-ui;background:#f4f0e8;color:#172231}header,section,footer{padding:4rem;min-height:70vh;border-bottom:1px solid #aeb5b9}h1{font-size:4rem}button{padding:1rem}article{padding:2rem;background:white;margin:2rem 0;border:1px solid #ccd4d9}</style>
+<header><h1>Page battle smoke arena</h1><p>Open Classic or KS2, spawn both teams, scroll, then restore.</p><button onclick="window.KineticSoulsOfficialPage.start({variant:'classic'})">Classic (1)</button> <button onclick="window.KineticSoulsOfficialPage.start({variant:'ks2'})">KS2 alpha</button></header>
+<main><section><h2>First battlefield</h2><article>A destructible article</article><article>Another destructible target</article></section><section><h2>Second battlefield</h2><article>Fighters above should stay above as this page scrolls.</article><button onclick="document.querySelector('#new-targets').insertAdjacentHTML('beforeend','<article>Newly added target</article>')">Add page element</button><div id="new-targets"></div></section><section><h2>Last battlefield</h2><article>Restore should leave this content intact.</article></section></main>
+<footer>End of page</footer><script src="../classic/dist-page/kinetic-official-page.js"></script>
+</html>

@@ -46,7 +46,7 @@ const SPLASH_ARCHIVE = [
 
 type GameMode = "timer" | "score" | "horde" | "infection" | "unlimited";
 type OpponentMode = "pvp" | "bot" | "ffa";
-type ThemeMode =
+export type ThemeMode =
   | "classic"
   | "neon"
   | "gameboy"
@@ -75,7 +75,7 @@ type ThemeMode =
   | "neon_overdrive"
   | "paper_sketch";
 
-type LokModifier =
+export type LokModifier =
   | "none"
   | "sudden_death"
   | "titans"
@@ -96,7 +96,7 @@ type MinimapPosition =
   | "bottom-center"
   | "top-center"
   | "center";
-type WeaponStyle = "standard" | "roulette" | "melee_mash" | "ranged_test" | "none";
+export type WeaponStyle = "standard" | "roulette" | "melee_mash" | "ranged_test" | "none";
 type Environment =
   | "none"
   | "ice"
@@ -249,7 +249,7 @@ interface TrailFrame {
   y: number;
   angle: number;
 }
-interface Character {
+export interface Character {
   id: number;
   team: number;
   x: number;
@@ -356,7 +356,7 @@ const BASE_PARTS: Part[] = [
   { ox: 6, oy: 6, r: 5, type: "leg" },
 ];
 
-function getPartDamage(type: "head" | "body" | "arm" | "leg"): number {
+export function getPartDamage(type: "head" | "body" | "arm" | "leg"): number {
   if (type === "head") return 5;
   if (type === "body") return 3;
   if (type === "arm") return 2;
@@ -408,7 +408,7 @@ function getRandomWeapon(): WeaponType {
   return types[Math.floor(Math.random() * types.length)];
 }
 
-function spawnCharacter(
+export function spawnCharacter(
   team: number,
   modifier: LokModifier,
   existingChars: Character[],
@@ -1798,7 +1798,7 @@ function getCharSprite(
   spriteCache[key] = cvs;
   return cvs;
 }
-function renderChar(
+export function renderChar(
   ctx: CanvasRenderingContext2D,
   c: Character,
   flash: boolean,
@@ -1827,7 +1827,7 @@ function renderChar(
   }
   ctx.restore();
 }
-function drawHpBar(
+export function drawHpBar(
   ctx: CanvasRenderingContext2D,
   c: Character,
   modifier: LokModifier,
@@ -1910,7 +1910,7 @@ function spawnExplosion(
 }
 
 // ─── THEME BACKGROUND DRAW ───────────────────────────────────────────────────
-function drawThemeBackground(
+export function drawThemeBackground(
   ctx: CanvasRenderingContext2D,
   theme: ThemeMode,
   ts: number,
@@ -2846,7 +2846,7 @@ function drawGameOver(
 }
 
 // ─── BESTIARY ────────────────────────────────────────────────────────────────
-const BESTIARY_ENTRIES: {
+export const BESTIARY_ENTRIES: {
   id: KineticType;
   name: string;
   role: string;
