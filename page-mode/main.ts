@@ -63,6 +63,7 @@ class PageBattle {
     this.observer = new MutationObserver(() => { this.scanAt = 0; });
     this.observer.observe(document.body, { childList: true, subtree: true });
     window.addEventListener("keydown", this.keydown, true);
+    document.addEventListener("click", this.clickSide, true);
     window.addEventListener("resize", this.resize);
     window.addEventListener("scroll", this.refresh, { passive: true });
     this.resize();
@@ -79,6 +80,12 @@ class PageBattle {
     if (key === "a" || key === "l") { event.preventDefault(); this.spawn(key === "a" ? 1 : 2, true); }
     else if (key === "m") { event.preventDefault(); this.action("modifiers"); }
     else if (key === "escape") { event.preventDefault(); this.action(this.panel.dataset.open === "true" ? "close" : "pause"); }
+  };
+  clickSide = (event: MouseEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element) || this.host.contains(target) || target.closest('a,button,input,textarea,select,[contenteditable="true"]')) return;
+    if (event.clientX < innerWidth * 0.25) this.spawn(1, true);
+    else if (event.clientX > innerWidth * 0.75) this.spawn(2, true);
   };
   resize = () => { this.canvas.width = innerWidth; this.canvas.height = innerHeight; this.scanAt = 0; };
   refresh = () => { this.scanAt = 0; };
@@ -272,6 +279,7 @@ class PageBattle {
   stop() {
     this.running = false; cancelAnimationFrame(this.frame); this.observer.disconnect();
     window.removeEventListener("keydown", this.keydown, true); window.removeEventListener("resize", this.resize); window.removeEventListener("scroll", this.refresh);
+    document.removeEventListener("click", this.clickSide, true);
     this.host.remove();
     window.dispatchEvent(new CustomEvent("lok:demoday:page-run", { detail: { version: 1, gameKey: "kinetic-souls", variant: this.variant, runId: this.runId, score: this.score + this.kills, xp: Math.min(200, this.score * 3 + this.kills), completedAt: new Date().toISOString() } }));
     if (game === this) game = null;
