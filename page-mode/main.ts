@@ -8,9 +8,9 @@ type Side = 1 | 2;
 type Fighter = ReturnType<typeof spawnClassic> | ReturnType<typeof spawnKs2>;
 type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean };
 type Options = { variant?: Variant };
-type Settings = { npcSide: 0 | Side; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; displayHp: boolean; fighter: string };
+type Settings = { npcSide: 0 | Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; displayHp: boolean; fighter: string };
 
-const settings: Settings = { npcSide: 2, modifier: "none", environment: "none", theme: "classic", weapon: "roulette", speed: 1, spawnMs: 2600, displayHp: true, fighter: "standard" };
+const settings: Settings = { npcSide: 2, motion: "battle", modifier: "none", environment: "none", theme: "classic", weapon: "roulette", speed: 1, spawnMs: 2600, displayHp: true, fighter: "standard" };
 const themes = ["classic", "neon", "gameboy", "abyss", "gsix", "gilded", "hacker", "synthwave", "vampire", "oceanic", "infernal", "glitch", "monochrome", "celestial", "overdrive", "comic", "wireframe_matrix", "blood_moon", "paper_sketch"];
 const modifiers = ["none", "sudden_death", "titans", "vampire_kiss", "magnet", "repel"];
 const environments = ["none", "ice", "blackhole", "bouncy", "wrap"];
@@ -165,7 +165,7 @@ class PageBattle {
       let nearest: Fighter | undefined;
       let nearestDistance = Infinity;
       for (const enemy of enemies) { const d = Math.hypot(enemy.x - fighter.x, enemy.y - fighter.y); if (d < nearestDistance) { nearest = enemy; nearestDistance = d; } }
-      if (nearest && nearestDistance > 35) {
+      if (settings.motion === "battle" && nearest && nearestDistance > 35) {
         const seek = fighter.kineticType === "assassin" || fighter.kineticType === "ninja" ? 0.22 : fighter.kineticType === "tank" ? 0.07 : 0.12;
         fighter.vx += (nearest.x - fighter.x) / nearestDistance * seek * dt;
         fighter.vy += (nearest.y - fighter.y) / nearestDistance * seek * dt;
@@ -265,7 +265,7 @@ class PageBattle {
       const entries = this.variant === "classic" ? classicBestiary : ks2Bestiary;
       this.panel.innerHTML = `<h2>${this.variant === "classic" ? "Classic" : "KS2"} Bestiary</h2><p class="notice">Choose a fighter for the next spawn.</p>${select("Spawn fighter", "fighter", entries.map(e => e.id))}<div>${entries.map(e => `<div class="entry"><strong style="color:${e.color}">${e.name}</strong><small>${e.role} · HP ${e.hp} · ${e.weapon}</small><div>${e.lore}</div></div>`).join("")}</div>`;
     } else if (name === "modifiers") {
-      this.panel.innerHTML = `<h2>Live modifiers · M</h2><p class="notice">Changes apply to this live-page battle. The standalone arena has the remaining modifiers.</p>${select("Combat modifier", "modifier", modifiers)}${select("Environment", "environment", environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", this.variant === "classic" ? themes : [...themes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "nebula"])}${select("Fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
+      this.panel.innerHTML = `<h2>Live modifiers · M</h2><p class="notice">Changes apply to this live-page battle. The standalone arena has the remaining modifiers.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifiers)}${select("Environment", "environment", environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", this.variant === "classic" ? themes : [...themes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "nebula"])}${select("Fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
     } else {
       this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC on ${this.lastNpcSide === 1 ? "left" : "right"}</button><p class="notice">A spawns left. L spawns right. Tapping either side takes manual control; Resume NPC hands it back.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
     }
