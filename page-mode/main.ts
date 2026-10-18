@@ -1,7 +1,7 @@
-import { spawnCharacter as spawnClassic, renderChar as renderClassic, drawHpBar as hpClassic, BESTIARY_ENTRIES as classicBestiary } from "../classic/src/pages/KineticSouls";
+import { spawnCharacter as spawnClassic, renderChar as renderClassic, drawHpBar as hpClassic, drawThemeBackground as backgroundClassic, BESTIARY_ENTRIES as classicBestiary } from "../classic/src/pages/KineticSouls";
 import { spawnCharacter as spawnKs2 } from "../ks2/src/systems/Spawner";
 import { renderChar as renderKs2, drawHpBar as hpKs2 } from "../ks2/src/render/DrawEntities";
-import { BESTIARY_ENTRIES as ks2Bestiary } from "../ks2/src/render/DrawUI";
+import { drawThemeBackground as backgroundKs2, BESTIARY_ENTRIES as ks2Bestiary } from "../ks2/src/render/DrawUI";
 
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
@@ -12,8 +12,8 @@ type Settings = { npcSide: 0 | Side; modifier: string; environment: string; them
 
 const settings: Settings = { npcSide: 2, modifier: "none", environment: "none", theme: "classic", weapon: "roulette", speed: 1, spawnMs: 2600, displayHp: true, fighter: "standard" };
 const themes = ["classic", "neon", "gameboy", "abyss", "gsix", "gilded", "hacker", "synthwave", "vampire", "oceanic", "infernal", "glitch", "monochrome", "celestial", "overdrive", "comic", "wireframe_matrix", "blood_moon", "paper_sketch"];
-const modifiers = ["none", "sudden_death", "titans", "shrinking_arena", "vampire_kiss", "necromancy", "magnet", "repel", "lok_bounty", "gravity_well", "time_distortion", "chaos_vortex"];
-const environments = ["none", "ice", "blackhole", "lava", "storm", "bouncy", "wrap", "blackout", "slipstream", "mobius_rifts", "amplitude_floor", "solar_flares", "magnetic_fields", "void_storm", "rift_portals", "acid_rain", "sandstorm", "dense_fog"];
+const modifiers = ["none", "sudden_death", "titans", "vampire_kiss", "magnet", "repel"];
+const environments = ["none", "ice", "blackhole", "bouncy", "wrap"];
 const weapons = ["standard", "roulette", "melee_mash", "ranged_test", "none"];
 
 let game: PageBattle | null = null;
@@ -141,6 +141,14 @@ class PageBattle {
     const visibleTargets = [...this.targets.values()].filter(t => !t.destroyed && t.x + t.width >= scrollX - 100 && t.x <= scrollX + innerWidth + 100 && t.y + t.height >= scrollY - 100 && t.y <= scrollY + innerHeight + 100);
     for (const fighter of this.fighters) {
       if (fighter.dead) continue;
+      if (settings.modifier === "magnet" || settings.modifier === "repel") {
+        const direction = settings.modifier === "magnet" ? 1 : -1;
+        for (const other of this.fighters) {
+          if (other === fighter || other.dead || other.team === fighter.team) continue;
+          const dx = other.x - fighter.x, dy = other.y - fighter.y, distance = Math.hypot(dx, dy);
+          if (distance > 20 && distance < 240) { fighter.vx += dx / distance * 0.035 * direction * dt; fighter.vy += dy / distance * 0.035 * direction * dt; }
+        }
+      }
       const enemies = this.fighters.filter(other => !other.dead && other.team !== fighter.team && Math.abs(other.y - fighter.y) < innerHeight * 1.3);
       let nearest: Fighter | undefined;
       let nearestDistance = Infinity;
@@ -198,8 +206,8 @@ class PageBattle {
         a.vx -= nx * impulse / a.mass; a.vy -= ny * impulse / a.mass;
         b.vx += nx * impulse / b.mass; b.vy += ny * impulse / b.mass;
         a.x -= nx * 2; b.x += nx * 2;
-        if (a.hp <= 0) { a.dead = true; this.kills++; }
-        if (b.hp <= 0) { b.dead = true; this.kills++; }
+        if (a.hp <= 0) { a.dead = true; this.kills++; if (settings.modifier === "vampire_kiss") b.hp = Math.min(b.maxHp, b.hp + 3); }
+        if (b.hp <= 0) { b.dead = true; this.kills++; if (settings.modifier === "vampire_kiss") a.hp = Math.min(a.maxHp, a.hp + 3); }
         if (a.dead || b.dead) this.updateHud();
       }
     }
@@ -208,16 +216,19 @@ class PageBattle {
 
   draw(now: number) {
     const ctx = this.ctx; ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.save(); ctx.translate(-scrollX, -scrollY);
-    for (const area of this.damage) {
-      if (area.x + area.width < scrollX || area.y + area.height < scrollY || area.x > scrollX + innerWidth || area.y > scrollY + innerHeight) continue;
-      ctx.fillStyle = settings.theme === "gameboy" ? "#293c33" : settings.theme === "neon" ? "#12052f" : "#101624";
-      ctx.fillRect(area.x, area.y, area.width, area.height);
-      ctx.strokeStyle = settings.theme === "gameboy" ? "#8bac0f" : "#71c8e8";
-      ctx.globalAlpha = 0.34;
-      for (let x = area.x; x < area.x + area.width; x += 22) { ctx.beginPath(); ctx.moveTo(x, area.y); ctx.lineTo(x, area.y + area.height); ctx.stroke(); }
-      ctx.globalAlpha = 1;
+    if (this.damage.length) {
+      ctx.save(); ctx.beginPath();
+      for (const area of this.damage) {
+        if (area.x + area.width < scrollX || area.y + area.height < scrollY || area.x > scrollX + innerWidth || area.y > scrollY + innerHeight) continue;
+        ctx.rect(area.x - scrollX, area.y - scrollY, area.width, area.height);
+      }
+      ctx.clip();
+      const sceneTime = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : now;
+      if (this.variant === "classic") backgroundClassic(ctx, settings.theme as never, sceneTime, innerWidth, innerHeight, 0);
+      else backgroundKs2(ctx, settings.theme as never, sceneTime, innerWidth, innerHeight, 0);
+      ctx.restore();
     }
+    ctx.save(); ctx.translate(-scrollX, -scrollY);
     for (const fighter of this.fighters) {
       if (fighter.x < scrollX - 100 || fighter.x > scrollX + innerWidth + 100 || fighter.y < scrollY - 100 || fighter.y > scrollY + innerHeight + 100) continue;
       if (this.variant === "classic") {
@@ -242,7 +253,7 @@ class PageBattle {
       const entries = this.variant === "classic" ? classicBestiary : ks2Bestiary;
       this.panel.innerHTML = `<h2>${this.variant === "classic" ? "Classic" : "KS2"} Bestiary</h2><p class="notice">Choose a fighter for the next spawn.</p>${select("Spawn fighter", "fighter", entries.map(e => e.id))}<div>${entries.map(e => `<div class="entry"><strong style="color:${e.color}">${e.name}</strong><small>${e.role} · HP ${e.hp} · ${e.weapon}</small><div>${e.lore}</div></div>`).join("")}</div>`;
     } else if (name === "modifiers") {
-      this.panel.innerHTML = `<h2>Live modifiers · M</h2><p class="notice">Changes apply to this live-page battle. Full arena-only controls remain in the standalone game.</p>${select("Combat modifier", "modifier", this.variant === "classic" ? modifiers.slice(0, 9) : modifiers)}${select("Environment", "environment", this.variant === "classic" ? environments.slice(0, 8) : environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", this.variant === "classic" ? themes : [...themes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "nebula"])}${select("Fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
+      this.panel.innerHTML = `<h2>Live modifiers · M</h2><p class="notice">Changes apply to this live-page battle. The standalone arena has the remaining modifiers.</p>${select("Combat modifier", "modifier", modifiers)}${select("Environment", "environment", environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", this.variant === "classic" ? themes : [...themes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "nebula"])}${select("Fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
     } else {
       this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC on ${this.lastNpcSide === 1 ? "left" : "right"}</button><p class="notice">A spawns left. L spawns right. Tapping either side takes manual control; Resume NPC hands it back.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
     }
