@@ -483,6 +483,8 @@ class PageBattle {
         const recoilSpeed = Math.hypot(recoil.vx, recoil.vy), maxRecoilSpeed = 16 * settings.speed;
         const recoilScale = recoilSpeed > maxRecoilSpeed ? maxRecoilSpeed / recoilSpeed : 1;
         fighter.vx = recoil.vx * recoilScale; fighter.vy = recoil.vy * recoilScale;
+        // Match the source combat loop's brief hit flash when a fighter lands a hit.
+        fighter.flashFrames = Math.max(fighter.flashFrames, 3);
         this.damageTarget(target, contact.x, contact.y, Math.max(0.6, Math.min(5, impactSpeed * 0.34)), fighter.team === 1 ? "#ff714e" : "#72dfff", impactSpeed, incomingX, incomingY);
       }
     }
