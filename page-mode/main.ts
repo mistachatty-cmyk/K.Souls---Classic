@@ -10,6 +10,7 @@ import { classifyPageMaterial, materialDamage, materialDurability, materialStage
 import { fighterTargetRecoil, impactImpulse, normalizeImpactDirection, resolveTargetContact } from "./impact-physics.mjs";
 import { pageEffects } from "./effects.mjs";
 import { createFracturePattern } from "./fracture.mjs";
+import { createGlassShardPolygons } from "./glass-shards.mjs";
 
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
@@ -19,7 +20,7 @@ type Target = { element: Element; x: number; y: number; width: number; height: n
 type Projectile = { x: number; y: number; previousX: number; previousY: number; vx: number; vy: number; team: number; life: number; type: "laser" | "fireball"; color: string };
 type FloatingText = { x: number; y: number; value: string; color: string; life: number };
 type FractureMark = { segments: ReturnType<typeof createFracturePattern>; color: string; strength: number; createdAt: number };
-type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number };
+type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number; material?: PageMaterial; points?: Array<{ x: number; y: number }> };
 type Shockwave = { x: number; y: number; radius: number; maxRadius: number; life: number; maxLife: number; color: string; width: number };
 type Options = { variant?: Variant };
 type Settings = { npcSide: Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; matchDurationMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean; effectMode: "full" | "low" };
@@ -573,6 +574,7 @@ class PageBattle {
 
   rebuildScene() {
     this.damage.length = 0;
+    this.shards = [];
     for (const target of this.targets.values()) {
       target.damage = 0; target.destroyed = false; target.stage = 0; target.lastHitAt = 0; target.fractures = [];
       if (target.dynamic) { target.x = target.homeX ?? target.x; target.y = target.homeY ?? target.y; target.vx = target.vy = 0; const el = target.element as HTMLElement; el.style.display = ""; el.style.left = `${target.x}px`; el.style.top = `${target.y}px`; }
@@ -751,7 +753,9 @@ class PageBattle {
     this.bombs = this.bombs.filter(bomb => bomb.active).slice(-40);
     for (const fighter of this.fighters) if (!fighter.dead && fighter.hp <= 0) this.awardKo(fighter, fighter.team === 1 ? 2 : 1);
     const floor = Math.max(innerHeight, document.documentElement.scrollHeight) - 12;
+    const animateShards = this.visualEffects().animated;
     for (const shard of this.shards) {
+      if (!animateShards) { shard.life = 0; continue; }
       shard.vy += 0.32 * dt;
       shard.x += shard.vx * dt; shard.y += shard.vy * dt; shard.angle += shard.spin * dt;
       shard.vx *= 0.995;
@@ -866,9 +870,31 @@ class PageBattle {
   }
 
   breakIntoShards(target: Target, x: number, y: number, force: number, combo = 1) {
+    const effects = this.visualEffects();
+    if (!effects.animated) return;
     const style = getComputedStyle(target.element);
     const color = style.backgroundColor !== "rgba(0, 0, 0, 0)" ? style.backgroundColor : style.color;
-    const count = Math.max(1, Math.round(Math.min(38, Math.max(12, Math.round(Math.sqrt(target.width * target.height) / 11) + combo * 2)) * this.visualEffects().particles));
+    if (target.material === "glass") {
+      const count = Math.max(4, Math.round((10 + Math.min(8, combo)) * effects.particles));
+      const seed = (Math.imul(Math.floor(x * 17) ^ Math.floor(y * 31) ^ Math.round(target.damage * 101), 2654435761) ^ target.fractures.length) >>> 0;
+      const polygons = createGlassShardPolygons(target.width, target.height, x - target.x, y - target.y, count, seed);
+      for (let i = 0; i < polygons.length && this.shards.length < 180; i++) {
+        const polygon = polygons[i];
+        const centerX = polygon.reduce((sum, point) => sum + point.x, 0) / polygon.length;
+        const centerY = polygon.reduce((sum, point) => sum + point.y, 0) / polygon.length;
+        const points = polygon.map(point => ({ x: point.x - centerX, y: point.y - centerY }));
+        const width = Math.max(1, Math.max(...points.map(point => point.x)) - Math.min(...points.map(point => point.x)));
+        const height = Math.max(1, Math.max(...points.map(point => point.y)) - Math.min(...points.map(point => point.y)));
+        const [outX, outY] = normalizeImpactDirection(centerX - (x - target.x), centerY - (y - target.y));
+        const speed = Math.min(16, 3 + force * 0.12 + combo * 0.3);
+        this.shards.push({ x: target.x + centerX, y: target.y + centerY, vx: outX * speed + target.impactDX * force * 0.08,
+          vy: outY * speed + target.impactDY * force * 0.08 - 1.2, width, height, angle: 0,
+          spin: Math.sin(i * 12.9898 + seed) * 0.16, color: color || "rgba(175,235,255,.4)", material: "glass", points,
+          life: 1800 + (i % 5) * 120, maxLife: 2280 });
+      }
+      return;
+    }
+    const count = Math.max(1, Math.round(Math.min(38, Math.max(12, Math.round(Math.sqrt(target.width * target.height) / 11) + combo * 2)) * effects.particles));
     for (let i = 0; i < count && this.shards.length < 180; i++) {
       const angle = (Math.PI * 2 * i / count) + (Math.random() - 0.5) * 0.55;
       const speed = 3 + Math.random() * 5 + Math.min(7, force * 0.15) + Math.min(3, combo * 0.35);
@@ -1017,8 +1043,17 @@ class PageBattle {
     for (const shard of this.shards) {
       if (!effects.animated || shard.x < scrollX - 30 || shard.x > scrollX + innerWidth + 30 || shard.y < scrollY - 30 || shard.y > scrollY + innerHeight + 30) continue;
       ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, shard.life / shard.maxLife)); ctx.translate(shard.x, shard.y); ctx.rotate(shard.angle);
-      ctx.fillStyle = shard.color; ctx.fillRect(-shard.width / 2, -shard.height / 2, shard.width, shard.height);
-      ctx.strokeStyle = this.variant === "classic" ? "#ffb14e" : "#bb91ff"; ctx.lineWidth = 1; ctx.strokeRect(-shard.width / 2, -shard.height / 2, shard.width, shard.height);
+      if (shard.points) {
+        ctx.beginPath(); ctx.moveTo(shard.points[0].x, shard.points[0].y);
+        for (const point of shard.points.slice(1)) ctx.lineTo(point.x, point.y);
+        ctx.closePath(); ctx.fillStyle = "rgba(175,235,255,.42)"; ctx.fill();
+        ctx.strokeStyle = "rgba(245,254,255,.88)"; ctx.lineWidth = 1.2; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(shard.points[0].x, shard.points[0].y); ctx.lineTo(shard.points[1].x, shard.points[1].y);
+        ctx.strokeStyle = this.variant === "classic" ? "rgba(255,177,78,.72)" : "rgba(187,145,255,.76)"; ctx.lineWidth = 0.65; ctx.stroke();
+      } else {
+        ctx.fillStyle = shard.color; ctx.fillRect(-shard.width / 2, -shard.height / 2, shard.width, shard.height);
+        ctx.strokeStyle = this.variant === "classic" ? "#ffb14e" : "#bb91ff"; ctx.lineWidth = 1; ctx.strokeRect(-shard.width / 2, -shard.height / 2, shard.width, shard.height);
+      }
       ctx.restore();
     }
     ctx.font = "bold 14px system-ui"; ctx.textAlign = "center";
