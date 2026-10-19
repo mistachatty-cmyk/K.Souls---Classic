@@ -7,12 +7,13 @@ import { updateBehaviors } from "../ks2/src/systems/Behaviors";
 import type { Character as Ks2Character, Drop, GameState, Particle } from "../ks2/src/game/types";
 import { mapPageTeamScores, playerOneSide } from "./team-sides.mjs";
 import { classifyPageMaterial, materialDamage, materialDurability, materialStageLabel, type PageMaterial } from "./materials.mjs";
+import { impactImpulse, normalizeImpactDirection } from "./impact-physics.mjs";
 
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
 type HeldSpawn = { side: Side; lastSpawnAt: number };
 type Fighter = ReturnType<typeof spawnClassic> | ReturnType<typeof spawnKs2>;
-type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; lastHitAt: number; boss: boolean; stage: number; material: PageMaterial; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number };
+type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; impactDX: number; impactDY: number; lastHitAt: number; boss: boolean; stage: number; material: PageMaterial; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number };
 type Projectile = { x: number; y: number; previousX: number; previousY: number; vx: number; vy: number; team: number; life: number; type: "laser" | "fireball"; color: string };
 type FloatingText = { x: number; y: number; value: string; color: string; life: number };
 type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number };
@@ -234,7 +235,7 @@ class PageBattle {
       // Break individual pieces of the page, not a full-height layout wrapper.
       if (rect.width < 40 || rect.height < 20 || rect.width > Math.min(innerWidth * 0.9, 780) || rect.height > 480 || rect.width * rect.height > 210000 || rect.bottom < -150 || rect.top > innerHeight + 150) continue;
       count++;
-      if (!this.targets.has(element)) this.targets.set(element, { element, x: 0, y: 0, width: 0, height: 0, damage: 0, destroyed: false, impactX: 0, impactY: 0, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName) });
+      if (!this.targets.has(element)) this.targets.set(element, { element, x: 0, y: 0, width: 0, height: 0, damage: 0, destroyed: false, impactX: 0, impactY: 0, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName) });
       const target = this.targets.get(element)!;
       target.x = rect.left + scrollX; target.y = rect.top + scrollY; target.width = rect.width; target.height = rect.height;
       seen.add(element);
@@ -470,11 +471,11 @@ class PageBattle {
         const cx = Math.max(target.x, Math.min(fighter.x, target.x + target.width));
         const cy = Math.max(target.y, Math.min(fighter.y, target.y + target.height));
         if (Math.hypot(fighter.x - cx, fighter.y - cy) < 15 * fighter.scale) {
+          const incomingX = fighter.vx, incomingY = fighter.vy;
           const impactSpeed = Math.abs(fighter.vx * (fighter.x - cx) + fighter.vy * (fighter.y - cy)) / Math.max(1, Math.hypot(fighter.x - cx, fighter.y - cy));
           fighter.vx *= -0.78; fighter.vy *= -0.58;
           fighter.vx += (Math.random() - 0.5) * 1.8; fighter.vy -= 0.35 + Math.random() * 0.55;
-          if (target.dynamic) { target.vx = (target.vx || 0) + fighter.vx * 0.38; target.vy = (target.vy || 0) + fighter.vy * 0.28 - 1.5; }
-          this.damageTarget(target, cx, cy, Math.max(0.6, Math.min(5, impactSpeed * 0.34)), fighter.team === 1 ? "#ff714e" : "#72dfff", impactSpeed);
+          this.damageTarget(target, cx, cy, Math.max(0.6, Math.min(5, impactSpeed * 0.34)), fighter.team === 1 ? "#ff714e" : "#72dfff", impactSpeed, incomingX, incomingY);
         }
       }
     }
@@ -536,7 +537,7 @@ class PageBattle {
     element.dataset.lokSandboxObject = "";
     element.style.cssText += `;position:absolute;left:${x}px;top:${y}px;width:${width}px;height:${height}px;object-fit:contain;z-index:2147483643;border:2px solid #93eaff;box-shadow:0 8px 24px #0008;cursor:grab;touch-action:none`;
     document.body.appendChild(element);
-    const target: Target = { element, x, y, width, height, damage: 0, destroyed: false, impactX: x + width / 2, impactY: y + height / 2, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName, true), dynamic: true, vx: (Math.random() - .5) * 3, vy: -2, homeX: x, homeY: y };
+    const target: Target = { element, x, y, width, height, damage: 0, destroyed: false, impactX: x + width / 2, impactY: y + height / 2, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName, true), dynamic: true, vx: (Math.random() - .5) * 3, vy: -2, homeX: x, homeY: y };
     this.targets.set(element, target);
     let drag: { px: number; py: number; x: number; y: number } | null = null;
     element.addEventListener("pointerdown", event => { if (element instanceof HTMLVideoElement && event.offsetY > element.clientHeight - 42) return; drag = { px: event.clientX, py: event.clientY, x: target.x, y: target.y }; element.setPointerCapture(event.pointerId); element.style.cursor = "grabbing"; event.preventDefault(); });
@@ -694,7 +695,7 @@ class PageBattle {
       const target = visibleTargets.find(t => !t.destroyed && shot.x >= t.x && shot.x <= t.x + t.width && shot.y >= t.y && shot.y <= t.y + t.height);
       if (target) {
         const impactColor = shot.color;
-        this.damageTarget(target, shot.x, shot.y, shot.type === "fireball" ? 3.2 : 1.8, impactColor, Math.hypot(shot.vx, shot.vy));
+        this.damageTarget(target, shot.x, shot.y, shot.type === "fireball" ? 3.2 : 1.8, impactColor, Math.hypot(shot.vx, shot.vy), shot.vx, shot.vy);
         shot.life = 0;
         continue;
       }
@@ -754,11 +755,13 @@ class PageBattle {
     this.screenShake *= Math.pow(0.08, dt);
   }
 
-  damageTarget(target: Target, x: number, y: number, amount: number, color: string, force: number) {
+  damageTarget(target: Target, x: number, y: number, amount: number, color: string, force: number, incomingX = 0, incomingY = -1) {
     if (target.destroyed) return;
+    const [directionX, directionY] = normalizeImpactDirection(incomingX, incomingY);
     const appliedDamage = materialDamage(amount, target.material);
     target.damage += appliedDamage;
-    target.impactX = x; target.impactY = y; target.lastHitAt = performance.now();
+    target.impactX = x; target.impactY = y; target.impactDX = directionX; target.impactDY = directionY; target.lastHitAt = performance.now();
+    if (target.dynamic) { const impulse = impactImpulse(force); target.vx = (target.vx || 0) + directionX * impulse; target.vy = (target.vy || 0) + directionY * impulse; }
     this.shockwaves.push({ x, y, radius: 3, maxRadius: 16 + Math.min(32, force * 2.2), life: 220, maxLife: 220, color, width: 2 + Math.min(3, force * 0.12) });
     this.screenShake = Math.min(9, Math.max(this.screenShake, Math.min(7, force * 0.24)));
     this.floatingTexts.push({ x, y: y - 10, value: `-${Math.round(appliedDamage * 10)}`, color, life: 520 });
@@ -810,7 +813,9 @@ class PageBattle {
     for (const { target, distance } of nearby) {
       const amount = materialDamage((source.boss ? 2.4 : 1.8) * (1 - distance / radius), target.material);
       const impactX = target.x + target.width / 2, impactY = target.y + target.height / 2;
-      target.impactX = impactX; target.impactY = impactY; target.lastHitAt = performance.now(); target.damage += amount;
+      const [directionX, directionY] = normalizeImpactDirection(impactX - x, impactY - y);
+      target.impactX = impactX; target.impactY = impactY; target.impactDX = directionX; target.impactDY = directionY; target.lastHitAt = performance.now(); target.damage += amount;
+      if (target.dynamic) { const impulse = impactImpulse(source.boss ? 12 : 7) * (1 - distance / radius); target.vx = (target.vx || 0) + directionX * impulse; target.vy = (target.vy || 0) + directionY * impulse; }
       const stage = Math.min(3, Math.floor(target.damage / this.targetLimit(target) * 4));
       if (stage > target.stage) { target.stage = stage; this.floatingTexts.push({ x: impactX, y: impactY - 28, value: materialStageLabel(target.material, stage), color, life: 850 }); }
       this.screenShake = Math.max(this.screenShake, source.boss ? 8 : 5);
@@ -833,7 +838,8 @@ class PageBattle {
     this.screenShake = Math.max(this.screenShake, 5);
     for (const target of targets) {
       if (target === boss || target.destroyed || Math.hypot(target.x + target.width / 2 - x, target.y + target.height / 2 - y) > 190) continue;
-      this.damageTarget(target, target.x + target.width / 2, target.y + target.height / 2, 0.8, "#ffe681", 4);
+      const targetX = target.x + target.width / 2, targetY = target.y + target.height / 2;
+      this.damageTarget(target, targetX, targetY, 0.8, "#ffe681", 4, targetX - x, targetY - y);
     }
   }
 
@@ -936,14 +942,23 @@ class PageBattle {
       const age = now - target.lastHitAt;
       ctx.save();
       if (target.damage > 0) {
+        ctx.beginPath(); ctx.rect(target.x, target.y, target.width, target.height); ctx.clip();
         ctx.globalAlpha = age < 110 ? 0.8 : 0.38 + strength * 0.25;
         ctx.strokeStyle = this.variant === "classic" ? "#ffb14e" : "#c7a6ff"; ctx.lineWidth = 2 + strength * 2;
         ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 8 + strength * 12;
-        for (let arm = 0; arm < 6; arm++) {
-          const angle = arm * Math.PI / 3 + (target.x % 0.45);
-          const reach = 7 + strength * 25;
-          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(angle) * reach, y + Math.sin(angle) * reach); ctx.stroke();
+        const reach = 9 + strength * 28, directionX = target.impactDX, directionY = target.impactDY;
+        const perpendicularX = -directionY, perpendicularY = directionX;
+        const endX = x + directionX * reach, endY = y + directionY * reach;
+        ctx.beginPath(); ctx.moveTo(x - directionX * 4, y - directionY * 4); ctx.lineTo(endX, endY);
+        for (const branch of [0.38, 0.68]) {
+          const branchX = x + directionX * reach * branch, branchY = y + directionY * reach * branch;
+          const branchLength = reach * (0.36 - branch * 0.12);
+          ctx.moveTo(branchX, branchY);
+          ctx.lineTo(branchX + perpendicularX * branchLength - directionX * branchLength * 0.38, branchY + perpendicularY * branchLength - directionY * branchLength * 0.38);
+          ctx.moveTo(branchX, branchY);
+          ctx.lineTo(branchX - perpendicularX * branchLength - directionX * branchLength * 0.38, branchY - perpendicularY * branchLength - directionY * branchLength * 0.38);
         }
+        ctx.stroke();
       }
       if (target.boss) {
         if (target.damage === 0) ctx.globalAlpha = 0.75;
