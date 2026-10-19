@@ -19,7 +19,7 @@ type Settings = { npcSide: 0 | Side; motion: "battle" | "dvd"; modifier: string;
 
 const settings: Settings = { npcSide: 2, motion: "battle", modifier: "none", environment: "bouncy", theme: "synthwave", weapon: "roulette", speed: 1, spawnMs: 2200, displayHp: true, fighter: "standard", npcEnabled: true };
 const themes = ["classic", "neon", "gameboy", "abyss", "gsix", "gilded", "hacker", "synthwave", "vampire", "oceanic", "infernal", "glitch", "monochrome", "celestial", "overdrive", "comic", "wireframe_matrix", "blood_moon", "paper_sketch"];
-const modifiers = ["none", "sudden_death", "titans", "vampire_kiss", "magnet", "repel"];
+const modifiers = ["none", "sudden_death", "titans", "vampire_kiss", "necromancy", "magnet", "repel", "gravity_well", "time_distortion", "chaos_vortex"];
 const environments = ["none", "ice", "blackhole", "bouncy", "wrap"];
 const weapons = ["standard", "roulette", "melee_mash", "ranged_test", "none"];
 const HOLD_REPEAT_MS = 150;
@@ -221,9 +221,28 @@ class PageBattle {
     this.hud.innerHTML = `<strong>KINETIC SOULS ${this.variant === "ks2" ? "2 · ALPHA" : "CLASSIC · 1"} · ${String(Math.floor(time / 60)).padStart(2, "0")}:${String(time % 60).padStart(2, "0")}</strong><br>P1 ${left} · ${this.teamKOs[1]} KOs · ${control} ${right} · ${this.teamKOs[2]} KOs<br>Page breaks ${this.score} · Chain ${this.chainBreaks} · ${this.matchFinished ? "MATCH COMPLETE" : "Tap to launch · Hold A/L or a side control for a stream"}`;
   }
 
-  awardKo(fighter: Fighter, team: Side) {
+  awardKo(fighter: Fighter, team: number) {
     if (fighter.dead) return;
-    fighter.dead = true; this.kills++; this.teamKOs[team]++;
+    fighter.dead = true; this.kills++;
+    if (team === 1 || team === 2) this.teamKOs[team]++;
+    const color = this.variant === "classic"
+      ? classicTeamColor(team, settings.theme as never, fighter.kineticType as never)
+      : ks2TeamColor(team, settings.theme as never, fighter.kineticType as never);
+    const name = String(fighter.kineticType || "kinetic").replaceAll("_", " ").toUpperCase();
+    this.floatingTexts.push({ x: fighter.x, y: fighter.y - 24, value: team === 5 ? "UNDEAD K.O." : `${name} K.O.`, color, life: 1050 });
+    this.screenShake = Math.max(this.screenShake, 3.5);
+    for (let i = 0; i < 14 && this.particles.length < 350; i++) {
+      const angle = Math.random() * Math.PI * 2, speed = 2 + Math.random() * 5;
+      this.particles.push({ x: fighter.x, y: fighter.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 420 + Math.random() * 380, maxLife: 800, size: 2 + Math.random() * 4, color, active: true });
+    }
+    // Kinetic Souls' Necromancy modifier turns defeated fighters into green neutral undead.
+    if (settings.modifier === "necromancy" && fighter.team !== 5 && this.fighters.length < 118) {
+      const zombie = this.variant === "classic"
+        ? spawnClassic(5, settings.modifier as never, this.fighters as ReturnType<typeof spawnClassic>[], false, false, "none", settings.speed, fighter.x, fighter.y, "zombie")
+        : spawnKs2(5, settings.modifier as never, this.fighters as ReturnType<typeof spawnKs2>[], false, false, "none", settings.speed, fighter.x, fighter.y, "zombie");
+      this.fighters.push(zombie);
+      this.floatingTexts.push({ x: fighter.x, y: fighter.y + 8, value: "UNDEAD RISE", color: "#72ff73", life: 950 });
+    }
     this.updateHud();
   }
 
@@ -286,6 +305,20 @@ class PageBattle {
           if (distance > 20 && distance < 240) { fighter.vx += dx / distance * 0.035 * direction * dt; fighter.vy += dy / distance * 0.035 * direction * dt; }
         }
       }
+      // Classic's standalone loop supports the original KS2 force modifiers too;
+      // KS2 already applies these in its native updateBehaviors system above.
+      if (this.variant === "classic" && settings.motion === "battle") {
+        if (settings.modifier === "gravity_well") {
+          const wellX = scrollX + innerWidth * (0.5 + Math.sin(performance.now() * 0.0005) * 0.32);
+          const wellY = scrollY + innerHeight * (0.5 + Math.cos(performance.now() * 0.0007) * 0.32);
+          const dx = wellX - fighter.x, dy = wellY - fighter.y, distance = Math.hypot(dx, dy);
+          if (distance > 10 && distance < 360) { fighter.vx += dx / distance * 0.38 * dt; fighter.vy += dy / distance * 0.38 * dt; }
+        } else if (settings.modifier === "chaos_vortex" && Math.random() < 0.001 * dt) {
+          fighter.vx += (Math.random() - 0.5) * 30;
+          fighter.vy += (Math.random() - 0.5) * 30;
+          this.floatingTexts.push({ x: fighter.x, y: fighter.y - 18, value: "CHAOS BURST", color: "#ff65dc", life: 700 });
+        }
+      }
       const enemies = this.fighters.filter(other => !other.dead && other.team !== fighter.team && Math.abs(other.y - fighter.y) < innerHeight * 1.3);
       let nearest: Fighter | undefined;
       let nearestDistance = Infinity;
@@ -305,7 +338,10 @@ class PageBattle {
       if (fighter.stunTime > 0) fighter.stunTime = Math.max(0, fighter.stunTime - dtMs);
       if (settings.environment === "blackhole") { fighter.vx += (scrollX + innerWidth / 2 - fighter.x) * 0.0001; fighter.vy += (scrollY + innerHeight / 2 - fighter.y) * 0.0001; }
       if (settings.environment === "ice") { fighter.vx *= 1.002; fighter.vy *= 1.002; }
-      fighter.x += fighter.vx * dt; fighter.y += fighter.vy * dt;
+      const timeScale = this.variant === "classic" && settings.modifier === "time_distortion"
+        ? 1 + Math.sin(performance.now() * 0.005 + fighter.id) * 0.5
+        : 1;
+      fighter.x += fighter.vx * dt * timeScale; fighter.y += fighter.vy * dt * timeScale;
       fighter.angle += fighter.angularV * dt;
       const drag = settings.environment === "ice" ? 0.998 : settings.environment === "bouncy" ? 1 : 0.985;
       fighter.vx *= drag; fighter.vy *= drag;
@@ -850,7 +886,7 @@ class PageBattle {
       const entries = this.variant === "classic" ? classicBestiary : ks2Bestiary;
       this.panel.innerHTML = `<h2>${this.variant === "classic" ? "Classic" : "KS2"} Bestiary</h2><p class="notice">Choose a fighter for the next spawn.</p>${select("Spawn fighter", "fighter", entries.filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<div>${entries.map(e => `<div class="entry"><strong style="color:${e.color}">${e.name}</strong><small>${e.role} · HP ${e.hp} · ${e.weapon}</small><div>${e.lore}</div></div>`).join("")}</div>`;
     } else if (name === "modifiers") {
-      this.panel.innerHTML = `<h2>Live modifiers · M</h2><p class="notice">Changes apply to this live-page battle. DVD mode bounces without team damage. The standalone arena has the remaining modifiers.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifiers)}${select("Environment", "environment", environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", this.variant === "classic" ? themes : [...themes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "nebula"])}${select("Fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
+      this.panel.innerHTML = `<h2>Live modifiers · M</h2><p class="notice">These Kinetic match modifiers run over the live page. Sudden Death and Titans affect new spawns; Necromancy raises neutral undead. Gravity Well, Time Distortion, and Chaos Vortex apply the version's original motion behaviors. DVD mode keeps teams non-damaging.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifiers)}${select("Environment", "environment", environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", this.variant === "classic" ? themes : [...themes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "nebula"])}${select("Fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
     } else {
       this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC on right</button><p class="notice">Tap A/L or a team control to launch one fighter. Hold either to keep launching; right-side input takes over Player 2 for 12 seconds.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
     }
