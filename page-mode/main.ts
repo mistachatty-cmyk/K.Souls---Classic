@@ -12,6 +12,7 @@ import { pageEffects } from "./effects.mjs";
 import { createFracturePattern } from "./fracture.mjs";
 import { createGlassShardPolygons } from "./glass-shards.mjs";
 import { createPaperTearPolygons } from "./paper-shards.mjs";
+import { createStoneChipPolygons } from "./stone-chips.mjs";
 import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
@@ -907,6 +908,25 @@ class PageBattle {
       }
       return;
     }
+    if (target.material === "stone") {
+      const seed = (Math.imul(Math.floor(x * 19) ^ Math.floor(y * 29) ^ Math.round(target.damage * 97), 2246822519) ^ target.fractures.length) >>> 0;
+      const count = Math.max(3, Math.min(5, Math.round(5 * effects.particles)));
+      const chips = createStoneChipPolygons(target.width, target.height, x - target.x, y - target.y, count, seed);
+      for (let i = 0; i < chips.length && this.shards.length < 180; i++) {
+        const polygon = chips[i];
+        const centerX = polygon.reduce((sum, point) => sum + point.x, 0) / polygon.length;
+        const centerY = polygon.reduce((sum, point) => sum + point.y, 0) / polygon.length;
+        const points = polygon.map(point => ({ x: point.x - centerX, y: point.y - centerY }));
+        const [outX, outY] = normalizeImpactDirection(centerX - (x - target.x), centerY - (y - target.y));
+        const speed = Math.min(6, 1.2 + force * 0.035);
+        this.shards.push({ x: target.x + centerX, y: target.y + centerY,
+          vx: outX * speed + target.impactDX * force * 0.018,
+          vy: outY * speed + target.impactDY * force * 0.018 + 0.5,
+          width: 14, height: 14, angle: 0, spin: Math.sin(i * 7.13 + seed) * 0.045,
+          color: "#8993a1", material: "stone", points, life: 760 + i * 65, maxLife: 1085 });
+      }
+      return;
+    }
     const count = Math.max(1, Math.round(Math.min(38, Math.max(12, Math.round(Math.sqrt(target.width * target.height) / 11) + combo * 2)) * effects.particles));
     for (let i = 0; i < count && this.shards.length < 180; i++) {
       const angle = (Math.PI * 2 * i / count) + (Math.random() - 0.5) * 0.55;
@@ -1021,6 +1041,18 @@ class PageBattle {
           ctx.moveTo(target.impactX + creaseSpan * 0.2, creaseY + 0.15);
           ctx.lineTo(target.impactX + creaseSpan * 0.31, creaseY + Math.max(3, target.height * 0.07)); ctx.stroke();
         }
+        if (target.material === "stone") {
+          const seamLength = Math.min(28, 8 + target.stage * 6);
+          const seamX = target.impactDX || 1, seamY = target.impactDY || 0.35;
+          const seamNorm = Math.hypot(seamX, seamY) || 1;
+          ctx.globalAlpha = 0.34 + strength * 0.24;
+          ctx.lineCap = "square"; ctx.strokeStyle = "rgba(24,31,42,.92)"; ctx.lineWidth = 2 + target.stage * 0.55;
+          ctx.beginPath(); ctx.moveTo(x - seamX / seamNorm * seamLength, y - seamY / seamNorm * seamLength);
+          ctx.lineTo(x + seamX / seamNorm * seamLength, y + seamY / seamNorm * seamLength); ctx.stroke();
+          ctx.globalAlpha *= 0.52; ctx.strokeStyle = "rgba(226,233,241,.82)"; ctx.lineWidth = 0.65;
+          ctx.beginPath(); ctx.moveTo(x - seamX / seamNorm * seamLength * 0.72, y - seamY / seamNorm * seamLength * 0.72 - 1);
+          ctx.lineTo(x + seamX / seamNorm * seamLength * 0.6, y + seamY / seamNorm * seamLength * 0.6 - 1); ctx.stroke();
+        }
         for (const fracture of target.fractures) {
           const fresh = effects.animated ? Math.max(0, 1 - (now - fracture.createdAt) / 180) : 0;
           const alpha = Math.min(0.9, 0.24 + fracture.strength * 0.25 + fresh * 0.3 + strength * 0.12);
@@ -1079,6 +1111,10 @@ class PageBattle {
           ctx.fillStyle = "rgba(245,231,193,.9)"; ctx.fill();
           ctx.strokeStyle = "rgba(105,70,47,.92)"; ctx.lineWidth = 1.15; ctx.stroke();
           ctx.globalAlpha *= 0.48; ctx.strokeStyle = "rgba(255,255,239,.92)"; ctx.lineWidth = 0.65; ctx.stroke();
+        } else if (shard.material === "stone") {
+          ctx.fillStyle = "#8993a1"; ctx.fill();
+          ctx.strokeStyle = "rgba(30,38,49,.96)"; ctx.lineWidth = 1.35; ctx.stroke();
+          ctx.globalAlpha *= 0.7; ctx.strokeStyle = "rgba(219,226,234,.88)"; ctx.lineWidth = 0.7; ctx.stroke();
         } else {
           ctx.fillStyle = "rgba(175,235,255,.42)"; ctx.fill();
           ctx.strokeStyle = "rgba(245,254,255,.88)"; ctx.lineWidth = 1.2; ctx.stroke();
