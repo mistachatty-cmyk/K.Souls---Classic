@@ -9,7 +9,7 @@ import type { Character as Ks2Character, Drop, GameState, Particle } from "../ks
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
 type Fighter = ReturnType<typeof spawnClassic> | ReturnType<typeof spawnKs2>;
-type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; lastHitAt: number };
+type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; lastHitAt: number; boss: boolean; stage: number };
 type Projectile = { x: number; y: number; previousX: number; previousY: number; vx: number; vy: number; team: number; life: number; type: "laser" | "fireball"; color: string };
 type FloatingText = { x: number; y: number; value: string; color: string; life: number };
 type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number };
@@ -47,6 +47,9 @@ class PageBattle {
   paused = false;
   score = 0;
   kills = 0;
+  chainBreaks = 0;
+  bossTarget: Target | null = null;
+  bossPulseAt = 0;
   teamKOs: Record<Side, number> = { 1: 0, 2: 0 };
   startTime = performance.now();
   runId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
@@ -54,6 +57,7 @@ class PageBattle {
   previous = performance.now();
   npcAt = 0;
   lastNpcSide: Side = 2;
+  spawnSprays = new Map<number, number>();
   scanAt = 0;
   observer: MutationObserver;
 
@@ -64,14 +68,34 @@ class PageBattle {
     this.host.style.cssText = "position:fixed;inset:0;z-index:2147483645;pointer-events:none";
     this.root = this.host.attachShadow({ mode: "open" });
     this.root.innerHTML = `<style>
-      :host{all:initial}*,*:before,*:after{box-sizing:border-box}.arena{position:fixed;inset:0;pointer-events:none;image-rendering:pixelated}.ui{font:600 13px system-ui,sans-serif;color:white;text-shadow:0 1px 3px black;pointer-events:auto}.top{position:fixed;left:12px;top:12px;right:12px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.badge,.controls,.panel{background:#101722ec;border:1px solid #80dcff99;box-shadow:0 8px 30px #0009;border-radius:12px}.badge{padding:10px 13px;max-width:48vw}.badge strong{color:#a8ebff}.controls{display:flex;gap:4px;flex-wrap:wrap;padding:6px}button,select,input{font:inherit}button{border:1px solid #ffffff66;border-radius:8px;background:#2b4058;color:#fff;padding:8px 10px;cursor:pointer}button:hover,button:focus-visible{background:#416b89;outline:2px solid #9eeaff}button[data-active="true"]{background:#357663}.bottom{position:fixed;bottom:12px;left:12px;right:12px;display:flex;justify-content:space-between;gap:10px}.spawn{font-size:16px;font-weight:800;min-height:52px;min-width:132px}.spawn[data-side="1"]{background:#694050}.spawn[data-side="2"]{background:#375b79}.panel{position:fixed;right:12px;top:65px;width:min(430px,calc(100vw - 24px));max-height:min(75vh,720px);overflow:auto;padding:18px;display:none}.panel[data-open="true"]{display:block}.panel h2{margin:0 0 10px;font-size:22px}.panel section{margin:12px 0}.panel label{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0}.panel select,.panel input{max-width:55%;background:#172638;color:#fff;border:1px solid #668ca4;border-radius:6px;padding:6px}.panel .entry{border-bottom:1px solid #ffffff30;padding:8px 0}.panel .entry strong{display:block}.panel .entry small{color:#b9d7e4}.panel a{color:#8de6ff}.notice{color:#bcd3df;font-size:12px;line-height:1.4}@media(max-width:640px){.top{flex-direction:column}.badge{max-width:100%;font-size:11px}.controls{max-width:100%}.controls button{padding:6px}.panel{top:105px}.spawn{min-width:112px}}
-    </style><canvas class="arena"></canvas><div class="ui"><div class="top"><div class="badge" role="status"></div><div class="controls"><button data-action="modifiers" title="M">Modifiers M</button><button data-action="bestiary">Bestiary</button><button data-action="settings">Settings</button><button data-action="pause">Pause</button><button data-action="exit">Restore page</button></div></div><div class="panel" role="dialog" aria-label="Kinetic Souls controls"></div><div class="bottom"><button class="spawn" data-side="1" title="Spawn left team, A">A · Spawn left</button><button class="spawn" data-side="2" title="Spawn right team, L">Spawn right · L</button></div></div>`;
+      :host{all:initial}*,*:before,*:after{box-sizing:border-box}.arena{position:fixed;inset:0;pointer-events:none;image-rendering:pixelated}.ui{font:600 13px system-ui,sans-serif;color:white;text-shadow:0 1px 3px black;pointer-events:auto}.top{position:fixed;left:12px;top:12px;right:12px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.badge,.controls,.panel{background:#101722ec;border:1px solid #80dcff99;box-shadow:0 8px 30px #0009;border-radius:12px}.badge{padding:10px 13px;max-width:48vw}.badge strong{color:#a8ebff}.controls{display:flex;gap:4px;flex-wrap:wrap;padding:6px}button,select,input{font:inherit}button{border:1px solid #ffffff66;border-radius:8px;background:#2b4058;color:#fff;padding:8px 10px;cursor:pointer}button:hover,button:focus-visible{background:#416b89;outline:2px solid #9eeaff}button[data-active="true"]{background:#357663}.bottom{position:fixed;bottom:12px;left:12px;right:12px;display:flex;justify-content:space-between;gap:10px}.spawn{font-size:16px;font-weight:800;min-height:52px;min-width:132px;touch-action:none;user-select:none}.spawn[data-spraying="true"]{filter:brightness(1.35);box-shadow:0 0 20px #8de6ff99}.spawn[data-side="1"]{background:#694050}.spawn[data-side="2"]{background:#375b79}.panel{position:fixed;right:12px;top:65px;width:min(430px,calc(100vw - 24px));max-height:min(75vh,720px);overflow:auto;padding:18px;display:none}.panel[data-open="true"]{display:block}.panel h2{margin:0 0 10px;font-size:22px}.panel section{margin:12px 0}.panel label{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0}.panel select,.panel input{max-width:55%;background:#172638;color:#fff;border:1px solid #668ca4;border-radius:6px;padding:6px}.panel .entry{border-bottom:1px solid #ffffff30;padding:8px 0}.panel .entry strong{display:block}.panel .entry small{color:#b9d7e4}.panel a{color:#8de6ff}.notice{color:#bcd3df;font-size:12px;line-height:1.4}@media(max-width:640px){.top{flex-direction:column}.badge{max-width:100%;font-size:11px}.controls{max-width:100%}.controls button{padding:6px}.panel{top:105px}.spawn{min-width:112px}}
+    </style><canvas class="arena"></canvas><div class="ui"><div class="top"><div class="badge" role="status"></div><div class="controls"><button data-action="modifiers" title="M">Modifiers M</button><button data-action="bestiary">Bestiary</button><button data-action="settings">Settings</button><button data-action="pause">Pause</button><button data-action="exit">Restore page</button></div></div><div class="panel" role="dialog" aria-label="Kinetic Souls controls"></div><div class="bottom"><button class="spawn" data-side="1" title="Hold to spray left team; A spawns one">A · Hold to spray left</button><button class="spawn" data-side="2" title="Hold to spray right team; L spawns one">Hold to spray right · L</button></div></div>`;
     document.body.appendChild(this.host);
     this.canvas = this.root.querySelector("canvas")!;
     this.ctx = this.canvas.getContext("2d")!;
     this.panel = this.root.querySelector(".panel")!;
     this.hud = this.root.querySelector(".badge")!;
-    this.root.querySelectorAll("button[data-side]").forEach(button => button.addEventListener("click", () => this.spawn(Number((button as HTMLElement).dataset.side) as Side, true)));
+    this.root.querySelectorAll<HTMLButtonElement>("button[data-side]").forEach(button => {
+      button.addEventListener("pointerdown", event => {
+        if (event.button !== 0 && event.pointerType !== "touch") return;
+        event.preventDefault();
+        button.setPointerCapture(event.pointerId);
+        const side = Number(button.dataset.side) as Side;
+        this.spawn(side, true);
+        button.dataset.spraying = "true";
+        this.spawnSprays.set(event.pointerId, window.setInterval(() => this.spawn(side, true), 250));
+      });
+      const stopSpray = (event: PointerEvent) => {
+        const timer = this.spawnSprays.get(event.pointerId);
+        if (timer !== undefined) { clearInterval(timer); this.spawnSprays.delete(event.pointerId); }
+        button.dataset.spraying = "false";
+      };
+      button.addEventListener("pointerup", stopSpray);
+      button.addEventListener("pointercancel", stopSpray);
+      button.addEventListener("lostpointercapture", stopSpray);
+      // Preserve keyboard and assistive-technology activation as a one-shot spawn.
+      button.addEventListener("click", event => { if (event.detail === 0) this.spawn(Number(button.dataset.side) as Side, true); });
+    });
     this.root.querySelectorAll("button[data-action]").forEach(button => button.addEventListener("click", () => this.action((button as HTMLElement).dataset.action!)));
     this.observer = new MutationObserver(() => { this.scanAt = 0; });
     this.observer.observe(document.body, { childList: true, subtree: true });
@@ -113,10 +137,15 @@ class PageBattle {
       // Break individual pieces of the page, not a full-height layout wrapper.
       if (rect.width < 40 || rect.height < 20 || rect.width > Math.min(innerWidth * 0.9, 780) || rect.height > 480 || rect.width * rect.height > 210000 || rect.bottom < -150 || rect.top > innerHeight + 150) continue;
       count++;
-      if (!this.targets.has(element)) this.targets.set(element, { element, x: 0, y: 0, width: 0, height: 0, damage: 0, destroyed: false, impactX: 0, impactY: 0, lastHitAt: 0 });
+      if (!this.targets.has(element)) this.targets.set(element, { element, x: 0, y: 0, width: 0, height: 0, damage: 0, destroyed: false, impactX: 0, impactY: 0, lastHitAt: 0, boss: false, stage: 0 });
       const target = this.targets.get(element)!;
       target.x = rect.left + scrollX; target.y = rect.top + scrollY; target.width = rect.width; target.height = rect.height;
       seen.add(element);
+    }
+    // Give the largest eligible page piece a one-time boss health bar and attack cycle.
+    if (!this.bossTarget) {
+      const boss = [...seen].map(element => this.targets.get(element)!).filter(target => target.width * target.height > 14000).sort((a, b) => b.width * b.height - a.width * a.height)[0];
+      if (boss) { boss.boss = true; this.bossTarget = boss; this.bossPulseAt = performance.now() + 9000; }
     }
     for (const [element] of this.targets) if (!element.isConnected) this.targets.delete(element);
   }
@@ -140,7 +169,7 @@ class PageBattle {
   updateHud() {
     const left = this.fighters.filter(f => !f.dead && f.team === 1).length;
     const right = this.fighters.filter(f => !f.dead && f.team === 2).length;
-    this.hud.innerHTML = `<strong>KINETIC SOULS ${this.variant === "ks2" ? "2 · ALPHA" : "CLASSIC · 1"}</strong><br>Left ${left} · ${this.teamKOs[1]} KOs · Right ${right} · ${this.teamKOs[2]} KOs<br>Page breaks ${this.score} · NPC ${settings.npcSide === 0 ? "off" : settings.npcSide === 1 ? "left" : "right"} · A / L to spawn`;
+    this.hud.innerHTML = `<strong>KINETIC SOULS ${this.variant === "ks2" ? "2 · ALPHA" : "CLASSIC · 1"}</strong><br>Left ${left} · ${this.teamKOs[1]} KOs · Right ${right} · ${this.teamKOs[2]} KOs<br>Page breaks ${this.score} · Chain ${this.chainBreaks} · Warden ${this.bossTarget?.destroyed ? "down" : this.bossTarget ? `${Math.max(0, 100 - Math.round(this.bossTarget.damage / this.targetLimit(this.bossTarget) * 100))}%` : "scanning"} · A / L to spawn`;
   }
 
   awardKo(fighter: Fighter, team: Side) {
@@ -262,6 +291,7 @@ class PageBattle {
     }
     this.updateProjectiles(dt, dtMs, visibleTargets);
     this.updateEffects(dt, dtMs);
+    this.updateBossPulse(visibleTargets, performance.now());
     this.fighters = this.fighters.filter(f => !f.dead);
   }
 
@@ -381,7 +411,13 @@ class PageBattle {
     target.impactX = x; target.impactY = y; target.lastHitAt = performance.now();
     this.screenShake = Math.min(9, Math.max(this.screenShake, Math.min(7, force * 0.24)));
     this.floatingTexts.push({ x, y: y - 10, value: `-${Math.round(amount * 10)}`, color, life: 520 });
-    const limit = Math.max(2.5, Math.min(9, target.width * target.height / 11000));
+    const limit = this.targetLimit(target);
+    const stage = Math.min(3, Math.floor(target.damage / limit * 4));
+    if (stage > target.stage) {
+      target.stage = stage;
+      this.floatingTexts.push({ x, y: y - 28, value: target.boss ? `WARDEN PHASE ${stage}` : ["", "CRACKED", "BREAKING", "UNSTABLE"][stage], color: target.boss ? "#ffe681" : color, life: 850 });
+      this.screenShake = Math.max(this.screenShake, 2 + stage * 1.1);
+    }
     const count = Math.min(9, Math.max(3, Math.round(amount * 1.6)));
     for (let i = 0; i < count && this.particles.length < 350; i++) {
       const angle = Math.random() * Math.PI * 2, speed = Math.min(9, 2 + force * 0.18 + Math.random() * 3);
@@ -391,9 +427,51 @@ class PageBattle {
     target.destroyed = true; this.score++;
     this.damage.push({ x: target.x, y: target.y, width: target.width, height: target.height });
     this.breakIntoShards(target, x, y, force);
-    this.floatingTexts.push({ x: target.x + target.width / 2, y: target.y, value: "PAGE BREAK!", color: "#fff0a6", life: 1000 });
+    this.floatingTexts.push({ x: target.x + target.width / 2, y: target.y, value: target.boss ? "RIFT WARDEN DOWN!" : "PAGE BREAK!", color: target.boss ? "#ffe681" : "#fff0a6", life: 1200 });
     this.screenShake = Math.min(11, Math.max(this.screenShake, 6 + Math.min(5, force * 0.15)));
+    this.chainBlast(target, x, y, color);
     this.updateHud();
+  }
+
+  targetLimit(target: Target) {
+    const base = Math.max(2.5, Math.min(9, target.width * target.height / 11000));
+    return target.boss ? base * 3 : base;
+  }
+
+  chainBlast(source: Target, x: number, y: number, color: string) {
+    const radius = source.boss ? 260 : 150;
+    const nearby = [...this.targets.values()].filter(target => !target.destroyed && target !== source)
+      .map(target => ({ target, distance: Math.hypot(target.x + target.width / 2 - x, target.y + target.height / 2 - y) }))
+      .filter(item => item.distance < radius).sort((a, b) => a.distance - b.distance).slice(0, source.boss ? 8 : 4);
+    if (!nearby.length) return;
+    this.chainBreaks += nearby.length;
+    this.floatingTexts.push({ x, y: y - 42, value: `CHAIN REACTION ×${nearby.length}`, color, life: 1000 });
+    for (const { target, distance } of nearby) {
+      const amount = (source.boss ? 2.4 : 1.8) * (1 - distance / radius);
+      const impactX = target.x + target.width / 2, impactY = target.y + target.height / 2;
+      target.impactX = impactX; target.impactY = impactY; target.lastHitAt = performance.now(); target.damage += amount;
+      const stage = Math.min(3, Math.floor(target.damage / this.targetLimit(target) * 4));
+      if (stage > target.stage) { target.stage = stage; this.floatingTexts.push({ x: impactX, y: impactY - 28, value: ["", "CRACKED", "BREAKING", "UNSTABLE"][stage], color, life: 850 }); }
+      this.screenShake = Math.max(this.screenShake, source.boss ? 8 : 5);
+      if (target.damage >= this.targetLimit(target)) {
+        target.destroyed = true; this.score++;
+        this.damage.push({ x: target.x, y: target.y, width: target.width, height: target.height });
+        this.breakIntoShards(target, impactX, impactY, amount * 2);
+      }
+    }
+  }
+
+  updateBossPulse(targets: Target[], now: number) {
+    const boss = this.bossTarget;
+    if (!boss || boss.destroyed || now < this.bossPulseAt || !targets.includes(boss)) return;
+    this.bossPulseAt = now + 9000;
+    const x = boss.x + boss.width / 2, y = boss.y + boss.height / 2;
+    this.floatingTexts.push({ x, y: y - 36, value: "WARDEN PULSE!", color: "#ffe681", life: 1100 });
+    this.screenShake = Math.max(this.screenShake, 5);
+    for (const target of targets) {
+      if (target === boss || target.destroyed || Math.hypot(target.x + target.width / 2 - x, target.y + target.height / 2 - y) > 190) continue;
+      this.damageTarget(target, target.x + target.width / 2, target.y + target.height / 2, 0.8, "#ffe681", 4);
+    }
   }
 
   breakIntoShards(target: Target, x: number, y: number, force: number) {
@@ -453,16 +531,27 @@ class PageBattle {
     }
     ctx.globalAlpha = 1;
     for (const target of this.targets.values()) {
-      if (target.destroyed || target.damage <= 0) continue;
+      if (target.destroyed) continue;
       const x = target.impactX, y = target.impactY, strength = Math.min(1, target.damage / 6);
       const age = now - target.lastHitAt;
-      ctx.save(); ctx.globalAlpha = age < 110 ? 0.8 : 0.38 + strength * 0.25;
-      ctx.strokeStyle = this.variant === "classic" ? "#ffb14e" : "#c7a6ff"; ctx.lineWidth = 2 + strength * 2;
-      ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 8 + strength * 12;
-      for (let arm = 0; arm < 6; arm++) {
-        const angle = arm * Math.PI / 3 + (target.x % 0.45);
-        const reach = 7 + strength * 25;
-        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(angle) * reach, y + Math.sin(angle) * reach); ctx.stroke();
+      ctx.save();
+      if (target.damage > 0) {
+        ctx.globalAlpha = age < 110 ? 0.8 : 0.38 + strength * 0.25;
+        ctx.strokeStyle = this.variant === "classic" ? "#ffb14e" : "#c7a6ff"; ctx.lineWidth = 2 + strength * 2;
+        ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 8 + strength * 12;
+        for (let arm = 0; arm < 6; arm++) {
+          const angle = arm * Math.PI / 3 + (target.x % 0.45);
+          const reach = 7 + strength * 25;
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(angle) * reach, y + Math.sin(angle) * reach); ctx.stroke();
+        }
+      }
+      if (target.boss) {
+        if (target.damage === 0) ctx.globalAlpha = 0.75;
+        const pulse = 0.5 + Math.sin(now * 0.006) * 0.5;
+        const radius = Math.max(target.width, target.height) * (0.7 + pulse * 0.22);
+        ctx.strokeStyle = `rgba(255,230,129,${0.45 + pulse * 0.45})`; ctx.lineWidth = 3; ctx.setLineDash([8, 7]);
+        ctx.beginPath(); ctx.ellipse(target.x + target.width / 2, target.y + target.height / 2, radius * 0.62, radius * 0.42, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+        ctx.font = "bold 12px system-ui"; ctx.textAlign = "center"; ctx.fillStyle = "#fff0a6"; ctx.fillText(`RIFT WARDEN · ${Math.max(0, 100 - Math.round(target.damage / this.targetLimit(target) * 100))}%`, target.x + target.width / 2, target.y - 12);
       }
       ctx.restore();
     }
@@ -558,6 +647,8 @@ class PageBattle {
   switchVariant(variant: Variant) { if (variant === this.variant) return; this.stop(); game = new PageBattle(variant); game.action("settings"); }
   stop() {
     this.running = false; cancelAnimationFrame(this.frame); this.observer.disconnect();
+    for (const timer of this.spawnSprays.values()) clearInterval(timer);
+    this.spawnSprays.clear();
     window.removeEventListener("keydown", this.keydown, true); window.removeEventListener("resize", this.resize); window.removeEventListener("scroll", this.refresh);
     document.removeEventListener("click", this.clickSide, true);
     this.host.remove();
