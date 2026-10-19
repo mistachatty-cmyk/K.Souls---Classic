@@ -14,6 +14,7 @@ type Target = { element: Element; x: number; y: number; width: number; height: n
 type Projectile = { x: number; y: number; previousX: number; previousY: number; vx: number; vy: number; team: number; life: number; type: "laser" | "fireball"; color: string };
 type FloatingText = { x: number; y: number; value: string; color: string; life: number };
 type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number };
+type Shockwave = { x: number; y: number; radius: number; maxRadius: number; life: number; maxLife: number; color: string; width: number };
 type Options = { variant?: Variant };
 type Settings = { npcSide: 0 | Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean };
 
@@ -48,6 +49,7 @@ class PageBattle {
   bombs: Drop[] = [];
   floatingTexts: FloatingText[] = [];
   shards: ArenaShard[] = [];
+  shockwaves: Shockwave[] = [];
   targets = new Map<Element, Target>();
   damage: { x: number; y: number; width: number; height: number }[] = [];
   screenShake = 0;
@@ -56,6 +58,8 @@ class PageBattle {
   score = 0;
   kills = 0;
   chainBreaks = 0;
+  breakCombo = 0;
+  comboUntil = 0;
   bossTarget: Target | null = null;
   bossPulseAt = 0;
   teamKOs: Record<Side, number> = { 1: 0, 2: 0 };
@@ -218,7 +222,8 @@ class PageBattle {
     const right = this.fighters.filter(f => !f.dead && f.team === 2).length;
     const time = Math.ceil(this.remainingMs / 1000);
     const control = performance.now() < this.rightControlUntil ? "Player 2" : settings.npcEnabled ? "NPC" : "Right idle";
-    this.hud.innerHTML = `<strong>KINETIC SOULS ${this.variant === "ks2" ? "2 · ALPHA" : "CLASSIC · 1"} · ${String(Math.floor(time / 60)).padStart(2, "0")}:${String(time % 60).padStart(2, "0")}</strong><br>P1 ${left} · ${this.teamKOs[1]} KOs · ${control} ${right} · ${this.teamKOs[2]} KOs<br>Page breaks ${this.score} · Chain ${this.chainBreaks} · ${this.matchFinished ? "MATCH COMPLETE" : "Tap to launch · Hold A/L or a side control for a stream"}`;
+    const combo = performance.now() < this.comboUntil ? ` · Combo ×${this.breakCombo}` : "";
+    this.hud.innerHTML = `<strong>KINETIC SOULS ${this.variant === "ks2" ? "2 · ALPHA" : "CLASSIC · 1"} · ${String(Math.floor(time / 60)).padStart(2, "0")}:${String(time % 60).padStart(2, "0")}</strong><br>P1 ${left} · ${this.teamKOs[1]} KOs · ${control} ${right} · ${this.teamKOs[2]} KOs<br>Page breaks ${this.score} · Chain ${this.chainBreaks}${combo} · ${this.matchFinished ? "MATCH COMPLETE" : "Tap to launch · Hold A/L or a side control for a stream"}`;
   }
 
   awardKo(fighter: Fighter, team: number) {
@@ -516,6 +521,7 @@ class PageBattle {
 
   rematch() {
     this.rebuildScene(); this.fighters = []; this.projectiles = []; this.teamKOs = { 1: 0, 2: 0 }; this.score = 0; this.kills = 0; this.chainBreaks = 0;
+    this.breakCombo = 0; this.comboUntil = 0; this.shockwaves = [];
     this.remainingMs = 120_000; this.matchFinished = false; this.completedRun = false; this.runId = createRunId();
     this.rightControlUntil = 0; this.paused = false; this.npcAt = performance.now() + 900;
     this.snapshots = []; this.snapshotAt = performance.now(); this.replayIndex = null;
@@ -594,6 +600,8 @@ class PageBattle {
   }
 
   updateEffects(dt: number, dtMs: number) {
+    for (const wave of this.shockwaves) { wave.radius += (wave.maxRadius - wave.radius) * Math.min(1, 0.18 * dt); wave.life -= dtMs; }
+    this.shockwaves = this.shockwaves.filter(wave => wave.life > 0).slice(-36);
     for (const particle of this.particles) {
       if (!particle.active) continue;
       particle.x += particle.vx * dt; particle.y += particle.vy * dt;
@@ -637,6 +645,7 @@ class PageBattle {
     if (target.destroyed) return;
     target.damage += amount;
     target.impactX = x; target.impactY = y; target.lastHitAt = performance.now();
+    this.shockwaves.push({ x, y, radius: 3, maxRadius: 16 + Math.min(32, force * 2.2), life: 220, maxLife: 220, color, width: 2 + Math.min(3, force * 0.12) });
     this.screenShake = Math.min(9, Math.max(this.screenShake, Math.min(7, force * 0.24)));
     this.floatingTexts.push({ x, y: y - 10, value: `-${Math.round(amount * 10)}`, color, life: 520 });
     const limit = this.targetLimit(target);
@@ -653,10 +662,12 @@ class PageBattle {
     }
     if (target.damage < limit) return;
     target.destroyed = true; this.score++;
+    const combo = this.registerBreak(x, y, target.boss ? "#ffe681" : color);
     this.damage.push({ x: target.x, y: target.y, width: target.width, height: target.height });
-    this.breakIntoShards(target, x, y, force);
-    this.floatingTexts.push({ x: target.x + target.width / 2, y: target.y, value: target.boss ? "RIFT WARDEN DOWN!" : "PAGE BREAK!", color: target.boss ? "#ffe681" : "#fff0a6", life: 1200 });
-    this.screenShake = Math.min(11, Math.max(this.screenShake, 6 + Math.min(5, force * 0.15)));
+    this.breakIntoShards(target, x, y, force, combo);
+    this.shockwaves.push({ x, y, radius: 8, maxRadius: Math.min(340, 105 + force * 12 + combo * 12), life: 560, maxLife: 560, color: target.boss ? "#ffe681" : color, width: target.boss ? 7 : 4 });
+    this.floatingTexts.push({ x: target.x + target.width / 2, y: target.y, value: target.boss ? "RIFT WARDEN DOWN!" : combo > 1 ? `PAGE BREAK · ×${combo}` : "PAGE BREAK!", color: target.boss ? "#ffe681" : "#fff0a6", life: 1200 });
+    this.screenShake = Math.min(13, Math.max(this.screenShake, 7 + Math.min(6, force * 0.18) + Math.min(2, combo * 0.35)));
     this.chainBlast(target, x, y, color);
     this.updateHud();
   }
@@ -666,11 +677,19 @@ class PageBattle {
     return target.boss ? base * 3 : base;
   }
 
+  registerBreak(x: number, y: number, color: string) {
+    const now = performance.now();
+    this.breakCombo = now < this.comboUntil ? Math.min(8, this.breakCombo + 1) : 1;
+    this.comboUntil = now + 1800;
+    if (this.breakCombo > 1) this.floatingTexts.push({ x, y: y - 38, value: `COMBO ×${this.breakCombo}`, color, life: 1050 });
+    return this.breakCombo;
+  }
+
   chainBlast(source: Target, x: number, y: number, color: string) {
-    const radius = source.boss ? 260 : 150;
+    const radius = source.boss ? 280 : Math.min(250, 150 + Math.max(0, this.breakCombo - 1) * 18);
     const nearby = [...this.targets.values()].filter(target => !target.destroyed && target !== source)
       .map(target => ({ target, distance: Math.hypot(target.x + target.width / 2 - x, target.y + target.height / 2 - y) }))
-      .filter(item => item.distance < radius).sort((a, b) => a.distance - b.distance).slice(0, source.boss ? 8 : 4);
+      .filter(item => item.distance < radius).sort((a, b) => a.distance - b.distance).slice(0, source.boss ? 8 : Math.min(8, 4 + this.breakCombo - 1));
     if (!nearby.length) return;
     this.chainBreaks += nearby.length;
     this.floatingTexts.push({ x, y: y - 42, value: `CHAIN REACTION ×${nearby.length}`, color, life: 1000 });
@@ -683,8 +702,10 @@ class PageBattle {
       this.screenShake = Math.max(this.screenShake, source.boss ? 8 : 5);
       if (target.damage >= this.targetLimit(target)) {
         target.destroyed = true; this.score++;
+        const combo = this.registerBreak(impactX, impactY, color);
         this.damage.push({ x: target.x, y: target.y, width: target.width, height: target.height });
-        this.breakIntoShards(target, impactX, impactY, amount * 2);
+        this.breakIntoShards(target, impactX, impactY, amount * 2, combo);
+        this.shockwaves.push({ x: impactX, y: impactY, radius: 5, maxRadius: Math.min(300, 90 + combo * 16), life: 480, maxLife: 480, color, width: 3 + Math.min(3, combo * 0.4) });
       }
     }
   }
@@ -702,14 +723,14 @@ class PageBattle {
     }
   }
 
-  breakIntoShards(target: Target, x: number, y: number, force: number) {
+  breakIntoShards(target: Target, x: number, y: number, force: number, combo = 1) {
     const style = getComputedStyle(target.element);
     const color = style.backgroundColor !== "rgba(0, 0, 0, 0)" ? style.backgroundColor : style.color;
-    const count = Math.min(24, Math.max(8, Math.round(Math.sqrt(target.width * target.height) / 13)));
+    const count = Math.min(38, Math.max(12, Math.round(Math.sqrt(target.width * target.height) / 11) + combo * 2));
     for (let i = 0; i < count && this.shards.length < 180; i++) {
       const angle = (Math.PI * 2 * i / count) + (Math.random() - 0.5) * 0.55;
-      const speed = 2 + Math.random() * 4 + Math.min(5, force * 0.12);
-      const w = 5 + Math.random() * 12, h = 4 + Math.random() * 10;
+      const speed = 3 + Math.random() * 5 + Math.min(7, force * 0.15) + Math.min(3, combo * 0.35);
+      const w = 5 + Math.random() * 16, h = 4 + Math.random() * 13;
       this.shards.push({ x: x + (Math.random() - 0.5) * target.width * 0.25, y: y + (Math.random() - 0.5) * target.height * 0.25,
         vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 2 - Math.random() * 2,
         width: w, height: h, angle: Math.random() * Math.PI, spin: (Math.random() - 0.5) * 0.3,
@@ -745,6 +766,15 @@ class PageBattle {
     for (const bomb of this.bombs) {
       if (!bomb.active || bomb.x < scrollX - 160 || bomb.x > scrollX + innerWidth + 160 || bomb.y < scrollY - 160 || bomb.y > scrollY + innerHeight + 160) continue;
       ctx.strokeStyle = "#b177ff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bomb.x, bomb.y, Math.min(bomb.radius, 18 + (3000 - bomb.timer) * 0.025), 0, Math.PI * 2); ctx.stroke();
+    }
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    for (const wave of this.shockwaves) {
+      if (reducedMotion) continue;
+      if (wave.x < scrollX - wave.maxRadius || wave.x > scrollX + innerWidth + wave.maxRadius || wave.y < scrollY - wave.maxRadius || wave.y > scrollY + innerHeight + wave.maxRadius) continue;
+      const progress = 1 - wave.life / wave.maxLife;
+      ctx.save(); ctx.globalAlpha = Math.max(0, 1 - progress) * 0.85; ctx.strokeStyle = wave.color;
+      ctx.lineWidth = Math.max(1, wave.width * (1 - progress * 0.72)); ctx.shadowColor = wave.color; ctx.shadowBlur = 12 * (1 - progress * 0.5);
+      ctx.beginPath(); ctx.arc(wave.x, wave.y, wave.radius, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
     }
     for (const shot of this.projectiles) {
       if (shot.x < scrollX - 20 || shot.x > scrollX + innerWidth + 20 || shot.y < scrollY - 20 || shot.y > scrollY + innerHeight + 20) continue;
