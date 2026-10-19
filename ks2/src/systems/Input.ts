@@ -225,6 +225,12 @@ export function setupInputListeners(
       }
     }
 
+    if (screen === "over" && (e.key === "Enter" || e.key.toLowerCase() === "r")) {
+      callbacks.startGame();
+      e.preventDefault();
+      return;
+    }
+
     if (e.key.toLowerCase() === "a" && screen === "game") callbacks.spawnP1();
     else if (e.key.toLowerCase() === "l" && screen === "game") callbacks.spawnP2();
     else if (e.key.toLowerCase() === "m" && screen === "game") callbacks.setShowLiveMenu(v => !v);
@@ -444,9 +450,17 @@ export function setupInputListeners(
         screenRef.current = "menu"; callbacks.setTick(t => t + 1);
       }
     } else if (screen === "over") {
-      screenRef.current = "menu";
-      dataRef.chars.current = []; dataRef.parts.current = [];
-      callbacks.setTick(t => t + 1);
+      const buttonY = state.classicMenu ? 440 : H / 2 + 145;
+      const buttonW = 180, buttonH = 48;
+      const rematchX = W / 2 - 190;
+      if (mx >= rematchX && mx <= rematchX + buttonW && my >= buttonY && my <= buttonY + buttonH) {
+        callbacks.startGame();
+      } else {
+        // Preserve the existing click-anywhere-to-return behavior for the menu action.
+        screenRef.current = "menu";
+        dataRef.chars.current = []; dataRef.parts.current = [];
+        callbacks.setTick(t => t + 1);
+      }
     }
   };
 
@@ -469,7 +483,8 @@ export function setupInputListeners(
         mouseRef.current.y = my;
         if (screenRef.current === "settings_menu" && modelRailTouchStart && Math.abs(mx - modelRailTouchStart.x) > Math.abs(my - modelRailTouchStart.y)) return;
         const dy = my - previousY;
-        refMenuScroll.current = Math.min(0, Math.max(-800, refMenuScroll.current + dy));
+        const maxScroll = screenRef.current === "settings_menu" ? -2400 : -800;
+        refMenuScroll.current = Math.min(0, Math.max(maxScroll, refMenuScroll.current + dy));
         refMenuDragY.current = my;
       }
     // Game screen movement tracking

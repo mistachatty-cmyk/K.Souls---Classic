@@ -1661,8 +1661,10 @@ export function drawGameOver(
     ctx.font = "14px monospace";
     ctx.fillText(`Peak Fighters: ${state.stats.maxChars}  |  Total Damage: ${Math.floor(state.stats.totalDmg)}`, W / 2, 360);
 
-    const hover = mouse.x >= W / 2 - 90 && mouse.x <= W / 2 + 90 && mouse.y >= 440 && mouse.y <= 488;
-    drawBtn(ctx, "MAIN MENU", W / 2 - 90, 440, 180, 48, hover, state.theme, false, true);
+    const rematchHover = mouse.x >= W / 2 - 190 && mouse.x <= W / 2 - 10 && mouse.y >= 440 && mouse.y <= 488;
+    const menuHover = mouse.x >= W / 2 + 10 && mouse.x <= W / 2 + 190 && mouse.y >= 440 && mouse.y <= 488;
+    drawBtn(ctx, "REMATCH", W / 2 - 190, 440, 180, 48, rematchHover, state.theme, false, true);
+    drawBtn(ctx, "MAIN MENU", W / 2 + 10, 440, 180, 48, menuHover, state.theme, false, true);
   } else {
     ctx.fillStyle = "rgba(0,0,0,0.82)";
     ctx.fillRect(0, 0, W, H);
@@ -1700,9 +1702,14 @@ export function drawGameOver(
     ctx.fillText("Max Fighters: " + state.stats.maxChars, W / 2, H / 2 + 100);
     ctx.fillText("Total Damage: " + Math.floor(state.stats.totalDmg), W / 2, H / 2 + 120);
 
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 16px monospace";
-    ctx.fillText("[ Press ENTER or click to return to menu ]", W / 2, H / 2 + 165);
+    const buttonY = H / 2 + 145;
+    const rematchHover = mouse.x >= W / 2 - 190 && mouse.x <= W / 2 - 10 && mouse.y >= buttonY && mouse.y <= buttonY + 48;
+    const menuHover = mouse.x >= W / 2 + 10 && mouse.x <= W / 2 + 190 && mouse.y >= buttonY && mouse.y <= buttonY + 48;
+    drawBtn(ctx, "REMATCH  [R]", W / 2 - 190, buttonY, 180, 48, rematchHover, state.theme, false, true);
+    drawBtn(ctx, "MAIN MENU", W / 2 + 10, buttonY, 180, 48, menuHover, state.theme, false, true);
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = "12px monospace";
+    ctx.fillText("Press R or ENTER to rematch · ESC to return to menu", W / 2, H / 2 + 215);
   }
 }
 

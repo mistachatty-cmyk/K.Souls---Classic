@@ -129,6 +129,7 @@ export default function KineticSouls() {
   const [p2Skin, setP2Skin] = useState<SkinType>("default");
   const [currentSplash, setCurrentSplash] = useState(() => SPLASH_ARCHIVE[Math.floor(Math.random() * SPLASH_ARCHIVE.length)]);
   const [showMobileUI, setShowMobileUI] = useState(false);
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [showTitleShop, setShowTitleShop] = useState(false);
   const [purchasedTitles, setPurchasedTitles] = useState<string[]>(["default"]);
   const [selectedTitle, setSelectedTitle] = useState<string>("default");
@@ -205,6 +206,15 @@ export default function KineticSouls() {
     const timer = setTimeout(() => setThemeNotify(null), 2000);
     return () => clearTimeout(timer);
   }, [themeNotify]);
+
+  useEffect(() => {
+    if (!showHowToPlay) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowHowToPlay(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [showHowToPlay]);
 
   // Attach the cache securely to the state reference so the drawing systems can access it
   useEffect(() => {
@@ -2715,6 +2725,35 @@ export default function KineticSouls() {
         position: "relative",
       }}
     >
+      {screenRef.current === "menu" && (
+        <button
+          type="button"
+          onClick={() => setShowHowToPlay(true)}
+          style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 110, padding: "8px 14px", background: "rgba(12,12,24,0.9)", color: "#fff", border: "1px solid rgba(255,255,255,0.35)", borderRadius: 4, fontFamily: "monospace", fontWeight: "bold", fontSize: 11, cursor: "pointer" }}
+        >
+          HOW TO PLAY
+        </button>
+      )}
+
+      {showHowToPlay && (
+        <div role="dialog" aria-modal="true" aria-labelledby="kinetic-tutorial-title" style={{ position: "fixed", inset: 0, zIndex: 1000, display: "grid", placeItems: "center", padding: 16, background: "rgba(0,0,0,0.78)" }}>
+          <section style={{ width: "min(520px, 100%)", boxSizing: "border-box", padding: 24, background: "#10101c", border: "1px solid #8c76d9", color: "#f5f3ff", fontFamily: "monospace", boxShadow: "0 16px 48px rgba(0,0,0,0.55)" }}>
+            <p style={{ margin: "0 0 6px", color: "#b6a1ff", fontSize: 11, letterSpacing: 2 }}>QUICK START</p>
+            <h2 id="kinetic-tutorial-title" style={{ margin: "0 0 18px", fontSize: 24 }}>How to play</h2>
+            <ol style={{ margin: 0, paddingLeft: 22, color: "#d4d0e5", lineHeight: 1.7, fontSize: 14 }}>
+              <li>Choose a timer or score match, then press Start Game.</li>
+              <li>Press <strong>A</strong> to spawn Player 1 and <strong>L</strong> to spawn Player 2. Fighters battle automatically; spawn more to build each side.</li>
+              <li>Press <strong>Esc</strong> to pause or resume. On touch screens, open <strong>Mobile UI</strong> for spawn and pause controls.</li>
+              <li>Open Settings to pick a fighter look. <strong>V2 / HD</strong> is the default; your choice applies to every fighter.</li>
+            </ol>
+            <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button type="button" autoFocus onClick={() => setShowHowToPlay(false)} style={{ padding: "10px 14px", background: "transparent", color: "#d4d0e5", border: "1px solid #514d66", cursor: "pointer", fontFamily: "monospace" }}>CLOSE</button>
+              <button type="button" onClick={() => { setShowHowToPlay(false); startGame(); }} style={{ padding: "10px 14px", background: "#5947a4", color: "#fff", border: "1px solid #9a86f0", cursor: "pointer", fontFamily: "monospace", fontWeight: "bold" }}>START MATCH</button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {/* Main Menu Passport Overlay */}
       {screenRef.current === "menu" && (
         <div style={{ position: "absolute", top: 12, left: 12, zIndex: 100 }}>
@@ -3368,7 +3407,9 @@ export default function KineticSouls() {
 
           <div style={{ display: "flex", gap: 12, justifyContent: "space-between", width: "100%", pointerEvents: "auto" }}>
           <button
-            onPointerDown={(e) => { e.preventDefault(); spawnP1(); }}
+            type="button"
+            aria-label="Spawn Player 1 fighter"
+            onClick={spawnP1}
             style={{
               background: "rgba(255,80,80,0.7)",
               color: "#fff",
@@ -3387,7 +3428,9 @@ export default function KineticSouls() {
             P1 SPAWN
           </button>
           <button
-            onPointerDown={(e) => { e.preventDefault(); spawnP2(); }}
+            type="button"
+            aria-label="Spawn Player 2 fighter"
+            onClick={spawnP2}
             style={{
               background: "rgba(80,100,255,0.7)",
               color: "#fff",
@@ -3429,13 +3472,17 @@ export default function KineticSouls() {
           </div>
           <div style={{ display: "flex", gap: 12, justifyContent: "space-between", width: "100%", pointerEvents: "auto" }}>
             <button
-              onPointerDown={(e) => { e.preventDefault(); setShowLiveMenu(v => !v); }}
+              type="button"
+              aria-label="Toggle live game modifiers"
+              onClick={() => setShowLiveMenu(v => !v)}
               style={{ padding: "10px", borderRadius: "8px", color: "#ffd700", background: showLiveMenu ? "rgba(255,215,0,0.2)" : "rgba(30,30,30,0.8)", border: "1px solid #ffd700", fontWeight: "bold", flex: 1, cursor: "pointer", touchAction: "none" }}
             >
               ⚙️ LIVE MODS
             </button>
             <button
-              onPointerDown={(e) => { e.preventDefault(); stateRef.current.paused = !stateRef.current.paused; setTick(t=>t+1); }}
+              type="button"
+              aria-label={stateRef.current.paused ? "Resume match" : "Pause match"}
+              onClick={() => { stateRef.current.paused = !stateRef.current.paused; setTick(t=>t+1); }}
               style={{ padding: "10px", borderRadius: "8px", color: "#fff", background: "rgba(30,30,30,0.8)", border: "1px solid rgba(255,255,255,0.2)", fontWeight: "bold", flex: 1, cursor: "pointer", touchAction: "none" }}
             >
               {stateRef.current.paused ? "▶ RESUME" : "⏸ PAUSE"}
