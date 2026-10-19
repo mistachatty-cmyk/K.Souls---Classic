@@ -137,7 +137,7 @@ export function drawWorld(
     }
 
     const flash = c.flashFrames > 0;
-    renderChar(ctx, c, flash, 1, state.theme, state.devMode, state.optCache, ts, (state as any).kineticStyle);
+    renderChar(ctx, c, flash, 1, state.theme, state.devMode, state.optCache, ts, state.kineticStyle);
 
     if (state.hud) {
       drawHpBar(ctx, c, state.modifier, state.devMode, state.theme, state.hpBarStyle);

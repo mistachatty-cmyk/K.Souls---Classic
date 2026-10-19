@@ -3,6 +3,7 @@ export type FloatingTextStyle = "standard" | "comic" | "neon" | "hidden";
 export type TitleStyle = "standard" | "advanced" | "neon" | "retro" | "glitch" | "minimal" | "pixel";
 export type ParticleStyle = "original" | "new" | "sparkle" | "snow" | "none";
 export type PhysicsMode = "standard" | "phantoms" | "classic_weapons" | "super_bouncy" | "lead_weights" | "bounce_only" | "attack_on_contact";
+export type KineticModelStyle = "block" | "classic" | "hd" | "sabre";
 
 export type GameMode = "timer" | "score" | "horde" | "infection" | "unlimited" | "boss_rush";
 export type OpponentMode = "pvp" | "bot" | "ffa" | "host" | "join" | "1v1" | "2v2" | "3v1" | "4v1";
@@ -176,6 +177,7 @@ export interface GameState {
    viewMode: ViewMode;
    minimapPosition: MinimapPosition;
    weaponStyle: WeaponStyle;
+   kineticStyle: KineticModelStyle;
    environment: Environment;
    p1Score: number;
    p2Score: number;

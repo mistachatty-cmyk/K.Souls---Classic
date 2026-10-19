@@ -12,12 +12,13 @@ import type {
   SkinType, LokPassportData, GameState, Character, Sabre, Particle, 
   Projectile, Ghost, FloatingText, KillFeedMsg, Drop, Essence, Portal 
 } from "../game/types";
+import { isKineticModelStyle, readKineticModelStyle, writeKineticModelStyle } from "../game/modelStyle";
 import { 
   spawnCharacter, getPartDamage, getRandomWeapon, resetCharIdCounter, getCharIdCounter 
 } from "../systems/Spawner";
 import { pushParticle, spawnExplosion } from "../systems/Particles";
 import { getTeamColor, renderChar, drawWeapon } from "../render/DrawEntities";
-import { drawThemeBackground, drawBtn, drawMainMenu, drawLokMenu, drawSettingsMenu, drawGameOver, drawBestiary } from "../render/DrawUI";
+import { drawThemeBackground, drawBtn, drawMainMenu, drawLokMenu, drawSettingsMenu, drawGameOver, drawBestiary, KINETIC_MODEL_OPTIONS } from "../render/DrawUI";
 import { drawWorld } from "../render/DrawWorld";
 import { updateBehaviors } from "../systems/Behaviors";
 import { setupInputListeners } from "../systems/Input";
@@ -68,6 +69,18 @@ const getYouTubeId = (url: string) => {
   const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
   return match ? match[1] : "";
 };
+
+const MODEL_SETTINGS_CHANNEL = "gsix.kinetic-souls.settings.v1";
+const TRUSTED_GSIX_ORIGINS = ["https://gsix.online", "https://www.gsix.online", "http://localhost:5173"];
+function getGsixParentOrigin(): string | null {
+  if (typeof window === "undefined" || window.parent === window) return null;
+  try {
+    const origin = new URL(document.referrer).origin;
+    return TRUSTED_GSIX_ORIGINS.includes(origin) ? origin : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * KineticSouls Main Game Component
@@ -211,6 +224,7 @@ export default function KineticSouls() {
      viewMode: "standard",
      minimapPosition: "bottom-right",
      weaponStyle: "standard",
+     kineticStyle: readKineticModelStyle(),
      environment: "none",
      p1Score: 0,
      p2Score: 0,
@@ -331,6 +345,53 @@ export default function KineticSouls() {
      bossKills: 0,
      riftPortalCooldown: 0,
    });
+
+  const selectKineticModelStyle = useCallback((style: unknown) => {
+    if (!isKineticModelStyle(style)) return;
+    stateRef.current.kineticStyle = style;
+    writeKineticModelStyle(style);
+    spriteCacheRef.current.clear();
+    const parentOrigin = getGsixParentOrigin();
+    if (parentOrigin) {
+      window.parent.postMessage({ channel: MODEL_SETTINGS_CHANNEL, type: "save", modelStyle: style }, parentOrigin);
+    }
+  }, []);
+
+  useEffect(() => {
+    const parentOrigin = getGsixParentOrigin();
+    if (!parentOrigin) return;
+    let loadInProgress = false;
+    let helloTimer: number | undefined;
+    const send = (type: string, extra: Record<string, unknown> = {}) => {
+      window.parent.postMessage({ channel: MODEL_SETTINGS_CHANNEL, type, ...extra }, parentOrigin);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window.parent || event.origin !== parentOrigin) return;
+      const message = event.data;
+      if (!message || message.channel !== MODEL_SETTINGS_CHANNEL || typeof message.type !== "string") return;
+      if (message.type === "ready") {
+        window.clearInterval(helloTimer);
+        if (!loadInProgress) {
+          loadInProgress = true;
+          send("load", { localModelStyle: readKineticModelStyle() });
+        }
+      } else if (message.type === "loaded") {
+        loadInProgress = false;
+        const style = isKineticModelStyle(message.modelStyle) ? message.modelStyle : readKineticModelStyle();
+        stateRef.current.kineticStyle = style;
+        writeKineticModelStyle(style);
+        spriteCacheRef.current.clear();
+        setTick((tick) => tick + 1);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    send("hello");
+    helloTimer = window.setInterval(() => send("hello"), 500);
+    return () => {
+      window.clearInterval(helloTimer);
+      window.removeEventListener("message", onMessage);
+    };
+  }, []);
 
   const refMode = useRef<GameMode>("timer");
   const refOpp = useRef<OpponentMode>("pvp");
@@ -2406,7 +2467,7 @@ export default function KineticSouls() {
 
           for (const c of frame.chars) {
             if (c.dead) continue;
-            renderChar(ctx, c, c.flashFrames > 0, 1, state.theme, state.devMode, false, ts, (state as any).kineticStyle);
+            renderChar(ctx, c, c.flashFrames > 0, 1, state.theme, state.devMode, false, ts, state.kineticStyle);
           }
           for (const p of frame.parts) {
             const alpha = Math.max(0, p.life / p.maxLife);
@@ -2518,6 +2579,10 @@ export default function KineticSouls() {
         },
         updateConfig: (key: string, value: any) => {
           if (value === "header") return; // Safely ignore category header clicks
+          if (key === "kineticStyle" && isKineticModelStyle(value)) {
+            selectKineticModelStyle(value);
+            return;
+          }
           if (key === 'mode') { refs.mode.current = value; stateRef.current.mode = value; }
           else if (key === 'theme') { refs.theme.current = value; stateRef.current.theme = value; spriteCacheRef.current.clear(); }
           else if (key === 'mod') { refs.mod.current = value; stateRef.current.modifier = value; }
@@ -3078,10 +3143,30 @@ export default function KineticSouls() {
         </div>
       )}
       
+      {screenRef.current === "settings_menu" && (
+        <div
+          role="group"
+          aria-label="Fighter model style"
+          style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}
+        >
+          <span aria-live="polite">Selected fighter model: {KINETIC_MODEL_OPTIONS.find((option) => option.id === stateRef.current.kineticStyle)?.label ?? "V2 / HD"}</span>
+          {KINETIC_MODEL_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={stateRef.current.kineticStyle === option.id}
+              onClick={() => { selectKineticModelStyle(option.id); setTick((tick) => tick + 1); }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
       <canvas
         ref={canvasRef}
         width={ARENA_W}
         height={ARENA_H + SCOREBOARD_H}
+        aria-label="Kinetic Souls 2 game. Open Settings to choose a fighter model."
         onPointerDown={(e) => {
           const st = stateRef.current;
           if (st.hud && st.viewMode === "standard" && screenRef.current === "game") {
@@ -3278,18 +3363,6 @@ export default function KineticSouls() {
               style={{ background: "rgba(30,30,30,0.8)", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "10px", fontSize: "12px", fontFamily: "monospace", fontWeight: "bold", borderRadius: "8px", cursor: "pointer", backdropFilter: "blur(4px)", flex: 1, touchAction: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
             >
               🎨 {themeMap[stateRef.current.theme] || "THEME"}
-            </button>
-            <button
-              onClick={() => {
-                const styles = ["block", "classic", "hd", "sabre"];
-                const idx = styles.indexOf((stateRef.current as any).kineticStyle || "block");
-                (stateRef.current as any).kineticStyle = styles[(idx + 1) % styles.length];
-                spriteCacheRef.current.clear(); 
-                setTick(t => t + 1);
-              }}
-              style={{ background: "rgba(30,30,30,0.8)", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "10px", fontSize: "12px", fontFamily: "monospace", fontWeight: "bold", borderRadius: "8px", cursor: "pointer", backdropFilter: "blur(4px)", flex: 1, touchAction: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-            >
-              ✨ STYLE: {((stateRef.current as any).kineticStyle || "block").toUpperCase()}
             </button>
           </div>
 
