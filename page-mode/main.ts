@@ -11,6 +11,7 @@ import { fighterTargetRecoil, impactImpulse, normalizeImpactDirection, resolveTa
 import { pageEffects } from "./effects.mjs";
 import { createFracturePattern } from "./fracture.mjs";
 import { createGlassShardPolygons } from "./glass-shards.mjs";
+import { createPaperTearPolygons } from "./paper-shards.mjs";
 import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
@@ -887,6 +888,25 @@ class PageBattle {
       }
       return;
     }
+    if (target.material === "paper") {
+      const seed = (Math.imul(Math.floor(x * 17) ^ Math.floor(y * 31) ^ Math.round(target.damage * 101), 2654435761) ^ target.fractures.length) >>> 0;
+      const strips = createPaperTearPolygons(target.width, target.height, x - target.x, y - target.y, seed);
+      for (let i = 0; i < strips.length && this.shards.length < 180; i++) {
+        const polygon = strips[i];
+        const centerX = polygon.reduce((sum, point) => sum + point.x, 0) / polygon.length;
+        const centerY = polygon.reduce((sum, point) => sum + point.y, 0) / polygon.length;
+        const points = polygon.map(point => ({ x: point.x - centerX, y: point.y - centerY }));
+        const upper = i === 0;
+        const shear = upper ? -1 : 1;
+        this.shards.push({ x: target.x + centerX, y: target.y + centerY,
+          vx: shear * (0.7 + Math.min(2, force * 0.025)) + target.impactDX * force * 0.018,
+          vy: shear * (1.1 + Math.min(2.6, force * 0.035)) + target.impactDY * force * 0.018,
+          width: target.width, height: target.height / 2, angle: 0, spin: shear * 0.018,
+          color: "rgba(245,231,193,.92)", material: "paper", points,
+          life: 900 + i * 140, maxLife: 1180 });
+      }
+      return;
+    }
     const count = Math.max(1, Math.round(Math.min(38, Math.max(12, Math.round(Math.sqrt(target.width * target.height) / 11) + combo * 2)) * effects.particles));
     for (let i = 0; i < count && this.shards.length < 180; i++) {
       const angle = (Math.PI * 2 * i / count) + (Math.random() - 0.5) * 0.55;
@@ -986,6 +1006,21 @@ class PageBattle {
       if (target.damage > 0) {
         ctx.beginPath(); ctx.rect(target.x, target.y, target.width, target.height); ctx.clip();
         const colors: Record<PageMaterial, string> = { glass: "#e7fbff", paper: "#fff0a6", stone: "#d5dce9", digital: this.variant === "classic" ? "#ffb14e" : "#c7a6ff" };
+        if (target.material === "paper") {
+          const creaseY = Math.max(target.y + target.height * 0.12, Math.min(target.y + target.height * 0.88, target.impactY));
+          const creaseSpan = target.width * 0.34;
+          ctx.globalAlpha = Math.min(0.42, 0.2 + strength * 0.06);
+          ctx.strokeStyle = "rgba(112,76,48,.88)"; ctx.lineWidth = 0.8 + target.stage * 0.16;
+          ctx.beginPath(); ctx.moveTo(target.impactX - creaseSpan, creaseY + 1.2);
+          ctx.lineTo(target.impactX - creaseSpan * 0.48, creaseY - 0.8);
+          ctx.lineTo(target.impactX, creaseY);
+          ctx.lineTo(target.impactX + creaseSpan * 0.52, creaseY + 1.1);
+          ctx.lineTo(target.impactX + creaseSpan, creaseY - 0.6); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(target.impactX - creaseSpan * 0.18, creaseY + 0.15);
+          ctx.lineTo(target.impactX - creaseSpan * 0.26, creaseY - Math.max(3, target.height * 0.08));
+          ctx.moveTo(target.impactX + creaseSpan * 0.2, creaseY + 0.15);
+          ctx.lineTo(target.impactX + creaseSpan * 0.31, creaseY + Math.max(3, target.height * 0.07)); ctx.stroke();
+        }
         for (const fracture of target.fractures) {
           const fresh = effects.animated ? Math.max(0, 1 - (now - fracture.createdAt) / 180) : 0;
           const alpha = Math.min(0.9, 0.24 + fracture.strength * 0.25 + fresh * 0.3 + strength * 0.12);
@@ -1039,10 +1074,17 @@ class PageBattle {
       if (shard.points) {
         ctx.beginPath(); ctx.moveTo(shard.points[0].x, shard.points[0].y);
         for (const point of shard.points.slice(1)) ctx.lineTo(point.x, point.y);
-        ctx.closePath(); ctx.fillStyle = "rgba(175,235,255,.42)"; ctx.fill();
-        ctx.strokeStyle = "rgba(245,254,255,.88)"; ctx.lineWidth = 1.2; ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(shard.points[0].x, shard.points[0].y); ctx.lineTo(shard.points[1].x, shard.points[1].y);
-        ctx.strokeStyle = this.variant === "classic" ? "rgba(255,177,78,.72)" : "rgba(187,145,255,.76)"; ctx.lineWidth = 0.65; ctx.stroke();
+        ctx.closePath();
+        if (shard.material === "paper") {
+          ctx.fillStyle = "rgba(245,231,193,.9)"; ctx.fill();
+          ctx.strokeStyle = "rgba(105,70,47,.92)"; ctx.lineWidth = 1.15; ctx.stroke();
+          ctx.globalAlpha *= 0.48; ctx.strokeStyle = "rgba(255,255,239,.92)"; ctx.lineWidth = 0.65; ctx.stroke();
+        } else {
+          ctx.fillStyle = "rgba(175,235,255,.42)"; ctx.fill();
+          ctx.strokeStyle = "rgba(245,254,255,.88)"; ctx.lineWidth = 1.2; ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(shard.points[0].x, shard.points[0].y); ctx.lineTo(shard.points[1].x, shard.points[1].y);
+          ctx.strokeStyle = this.variant === "classic" ? "rgba(255,177,78,.72)" : "rgba(187,145,255,.76)"; ctx.lineWidth = 0.65; ctx.stroke();
+        }
       } else {
         ctx.fillStyle = shard.color; ctx.fillRect(-shard.width / 2, -shard.height / 2, shard.width, shard.height);
         ctx.strokeStyle = this.variant === "classic" ? "#ffb14e" : "#bb91ff"; ctx.lineWidth = 1; ctx.strokeRect(-shard.width / 2, -shard.height / 2, shard.width, shard.height);
