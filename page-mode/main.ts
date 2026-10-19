@@ -16,9 +16,9 @@ type FloatingText = { x: number; y: number; value: string; color: string; life: 
 type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number };
 type Shockwave = { x: number; y: number; radius: number; maxRadius: number; life: number; maxLife: number; color: string; width: number };
 type Options = { variant?: Variant };
-type Settings = { npcSide: 0 | Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean };
+type Settings = { npcSide: 0 | Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; matchDurationMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean };
 
-const settings: Settings = { npcSide: 2, motion: "battle", modifier: "none", environment: "bouncy", theme: "synthwave", weapon: "roulette", speed: 1, spawnMs: 2200, displayHp: true, fighter: "standard", npcEnabled: true };
+const settings: Settings = { npcSide: 2, motion: "battle", modifier: "none", environment: "bouncy", theme: "synthwave", weapon: "roulette", speed: 1, spawnMs: 2200, matchDurationMs: 120_000, displayHp: true, fighter: "standard", npcEnabled: true };
 const classicThemes = ["classic", "neon", "gameboy", "abyss", "runesite", "gsix", "gilded", "synthwave", "vampire", "oceanic", "infernal", "glitch", "monochrome", "celestial", "overdrive", "comic", "hacker", "rgb_cycle", "neon_abyss", "glassmorphism", "wireframe_matrix", "celestial_forge", "blood_moon", "neon_overdrive", "paper_sketch"];
 const ks2Themes = ["classic", "runesite", "gsix", "neon", "gameboy", "runesite_ultimate", "gilded", "lokmod", "glitch", "rgb_cycle", "comic", "neon_abyss", "cyberpunk", "ethereal", "wasteland", "monochrome", "void", "celestial", "overdrive", "abyss", "hacker", "synthwave", "vampire", "oceanic", "infernal", "glassmorphism", "wireframe_matrix", "celestial_forge", "blood_moon", "neon_overdrive", "paper_sketch", "outrun", "frostbite", "solaris", "deepsea", "liminal", "nebula"];
 const classicNativeModifiers = ["none", "sudden_death", "titans", "shrinking_arena", "vampire_kiss", "necromancy", "magnet", "repel", "lok_bounty"];
@@ -31,6 +31,7 @@ const ks2PageEnvironmentSet = new Set(["solar_flares", "magnetic_fields", "void_
 const classicEnvironments = ["none", "ice", "blackhole", "lava", "storm", "bouncy", "wrap", "blackout"];
 const ks2Environments = [...classicEnvironments, "solar_flares", "magnetic_fields", "void_storm"];
 const weapons = ["standard", "roulette", "melee_mash", "ranged_test"];
+const matchDurations = ["60000", "120000", "180000", "300000"];
 const HOLD_REPEAT_MS = 150;
 
 let game: PageBattle | null = null;
@@ -71,8 +72,8 @@ class PageBattle {
   bossTarget: Target | null = null;
   bossPulseAt = 0;
   teamKOs: Record<Side, number> = { 1: 0, 2: 0 };
-  startTime = performance.now();
-  remainingMs = 120_000;
+  matchDurationMs = settings.matchDurationMs;
+  remainingMs = this.matchDurationMs;
   matchFinished = false;
   completedRun = false;
   rightControlUntil = 0;
@@ -280,6 +281,13 @@ class PageBattle {
     this.hud.innerHTML = `<div class="hud-head"><span class="hud-brand">KINETIC <b>SOULS</b> <small>${version}</small></span><span class="hud-clock">${String(Math.floor(time / 60)).padStart(2, "0")}:${String(time % 60).padStart(2, "0")}</span></div><div class="hud-score"><span class="hud-team"><span>P1 · ${left}</span><strong>${this.teamKOs[1]} KO</strong></span><span class="hud-team"><span>${control} · ${right}</span><strong>${this.teamKOs[2]} KO</strong></span></div><div class="hud-meta">PAGE BREAKS <strong>${this.score}</strong> · CHAIN <strong>${this.chainBreaks}</strong>${combo ? `<strong>${combo}</strong>` : ""} · ${this.matchFinished ? "MATCH COMPLETE" : "A / L TO SPAWN · HOLD TO SPRAY"}</div>`;
   }
 
+  durationLabel(durationMs: number) {
+    const minutes = durationMs / 60_000;
+    return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+  }
+
+  elapsedMatchMs() { return Math.max(0, this.matchDurationMs - this.remainingMs); }
+
   awardKo(fighter: Fighter, team: number) {
     if (fighter.dead) return;
     fighter.dead = true; this.kills++;
@@ -333,7 +341,7 @@ class PageBattle {
       if (!this.matchFinished && settings.modifier === "lok_bounty" && now >= this.bountyAt) { this.spawnBounty(); this.bountyAt = now + 8000; }
       if (now > this.scanAt) { this.scan(); this.scanAt = now + 900; }
       if (!this.matchFinished) this.step(dt);
-      if (now >= this.snapshotAt) { this.snapshots.push({ at: 120_000 - this.remainingMs, fighters: this.fighters.map(f => ({ x: f.x, y: f.y, angle: f.angle })), score: this.score, kos: { ...this.teamKOs } }); this.snapshots = this.snapshots.slice(-121); this.snapshotAt = now + 1000; }
+      if (now >= this.snapshotAt) { this.snapshots.push({ at: this.elapsedMatchMs(), fighters: this.fighters.map(f => ({ x: f.x, y: f.y, angle: f.angle })), score: this.score, kos: { ...this.teamKOs } }); this.snapshots = this.snapshots.slice(-(Math.ceil(this.matchDurationMs / 1000) + 1)); this.snapshotAt = now + 1000; }
       if (now >= this.hudAt) { this.updateHud(); this.hudAt = now + 500; }
       const timeline = this.panel.querySelector<HTMLInputElement>("[data-timeline]");
       if (timeline && this.replayIndex === null) { timeline.max = String(Math.max(0, this.snapshots.length - 1)); timeline.value = timeline.max; }
@@ -346,7 +354,7 @@ class PageBattle {
     const dtMs = dt * 16.67;
     const now = performance.now();
     const worldWidth = Math.max(innerWidth, document.documentElement.scrollWidth), worldHeight = Math.max(innerHeight, document.documentElement.scrollHeight);
-    const shrink = settings.modifier === "shrinking_arena" ? Math.min(0.32, (120_000 - this.remainingMs) / 120_000 * 0.32) : 0;
+    const shrink = settings.modifier === "shrinking_arena" ? Math.min(0.32, this.elapsedMatchMs() / this.matchDurationMs * 0.32) : 0;
     const minX = 18 + Math.min(worldWidth * 0.38, worldWidth * shrink), maxX = Math.max(minX + 36, worldWidth - 18 - worldWidth * shrink);
     const minY = 85 + Math.min(Math.max(0, worldHeight - 120) * 0.38, worldHeight * shrink), maxY = Math.max(minY + 80, worldHeight - 18 - worldHeight * shrink);
     const visibleTargets = [...this.targets.values()].filter(t => !t.destroyed && t.x + t.width >= scrollX - 100 && t.x <= scrollX + innerWidth + 100 && t.y + t.height >= scrollY - 100 && t.y <= scrollY + innerHeight + 100);
@@ -582,7 +590,7 @@ class PageBattle {
     const result = this.teamKOs[1] === this.teamKOs[2] ? "Draw" : this.teamKOs[1] > this.teamKOs[2] ? "Player 1 wins" : "Player 2 / NPC wins";
     this.completeRun(result);
     this.panel.dataset.view = "result"; this.panel.dataset.open = "true";
-    this.panel.innerHTML = `<h2>Match complete</h2><p><strong>${result}</strong></p><p>Player 1: ${this.teamKOs[1]} KOs · Player 2 / NPC: ${this.teamKOs[2]} KOs</p><p>Page targets destroyed: ${this.score}</p><button data-rematch>Rematch · 2 minutes</button><button data-close-panel>Close panel</button>`;
+    this.panel.innerHTML = `<h2>Match complete</h2><p><strong>${result}</strong></p><p>Player 1: ${this.teamKOs[1]} KOs · Player 2 / NPC: ${this.teamKOs[2]} KOs</p><p>Page targets destroyed: ${this.score}</p><button data-rematch>Rematch · ${this.durationLabel(settings.matchDurationMs)}</button><button data-close-panel>Close panel</button>`;
     this.panel.querySelector("[data-rematch]")?.addEventListener("click", () => this.rematch());
     this.panel.querySelector("[data-close-panel]")?.addEventListener("click", () => { this.panel.dataset.open = "false"; });
     this.updateHud();
@@ -591,13 +599,13 @@ class PageBattle {
   completeRun(result: string) {
     if (this.completedRun) return;
     this.completedRun = true;
-    window.dispatchEvent(new CustomEvent("lok:demoday:page-run", { detail: { version: 1, gameKey: "kinetic-souls", variant: this.variant, runId: this.runId, durationMs: 120_000 - this.remainingMs, teamScores: { player1: this.teamKOs[1], player2: this.teamKOs[2] }, result, score: this.score + this.teamKOs[1] + this.teamKOs[2], xp: Math.min(200, this.score * 3 + this.teamKOs[1] + this.teamKOs[2]), completedAt: new Date().toISOString() } }));
+    window.dispatchEvent(new CustomEvent("lok:demoday:page-run", { detail: { version: 1, gameKey: "kinetic-souls", variant: this.variant, runId: this.runId, durationMs: this.elapsedMatchMs(), matchDurationMs: this.matchDurationMs, teamScores: { player1: this.teamKOs[1], player2: this.teamKOs[2] }, result, score: this.score + this.teamKOs[1] + this.teamKOs[2], xp: Math.min(200, this.score * 3 + this.teamKOs[1] + this.teamKOs[2]), completedAt: new Date().toISOString() } }));
   }
 
   rematch() {
     this.rebuildScene(); this.fighters = []; this.projectiles = []; this.teamKOs = { 1: 0, 2: 0 }; this.score = 0; this.kills = 0; this.chainBreaks = 0;
     this.breakCombo = 0; this.comboUntil = 0; this.shockwaves = [];
-    this.remainingMs = 120_000; this.matchFinished = false; this.completedRun = false; this.runId = createRunId();
+    this.matchDurationMs = settings.matchDurationMs; this.remainingMs = this.matchDurationMs; this.matchFinished = false; this.completedRun = false; this.runId = createRunId();
     this.rightControlUntil = 0; this.paused = false; this.npcAt = performance.now() + 900;
     this.snapshots = []; this.snapshotAt = performance.now(); this.replayIndex = null;
     (this.root.querySelector('[data-action="pause"]') as HTMLElement).textContent = "Pause";
@@ -848,7 +856,7 @@ class PageBattle {
     }
     if (settings.modifier === "shrinking_arena") {
       const worldWidth = Math.max(innerWidth, document.documentElement.scrollWidth), worldHeight = Math.max(innerHeight, document.documentElement.scrollHeight);
-      const shrink = Math.min(0.32, (120_000 - this.remainingMs) / 120_000 * 0.32);
+      const shrink = Math.min(0.32, this.elapsedMatchMs() / this.matchDurationMs * 0.32);
       const left = 18 + worldWidth * shrink, top = 85 + Math.max(0, worldHeight - 120) * shrink;
       ctx.save(); ctx.strokeStyle = "rgba(255,106,135,.78)"; ctx.shadowColor = "#ff5f8c"; ctx.shadowBlur = 12; ctx.lineWidth = 3; ctx.setLineDash([12, 9]);
       ctx.strokeRect(left, top, Math.max(36, worldWidth - left * 2), Math.max(80, worldHeight - top - 18)); ctx.setLineDash([]); ctx.restore();
@@ -1003,9 +1011,10 @@ class PageBattle {
     const optionLabel = (option: string, key: keyof Settings) => {
       const label = ({ none: "None", sudden_death: "Sudden Death", shrinking_arena: "Shrinking Arena", lok_bounty: "LoK Bounty", titans: "Titans", vampire_kiss: "Vampire's Kiss", time_distortion: "Time Distortion", chaos_vortex: "Chaos Vortex", gravity_well: "Gravity Well", melee_mash: "Melee Mash", ranged_test: "Ranged Test", blackhole: "Black Hole", gameboy: "Game Boy", paper_sketch: "Paper Sketch", wireframe_matrix: "Wireframe Matrix", blood_moon: "Blood Moon", runesite_ultimate: "Runesite Ultimate", neon_abyss: "Neon Abyss", rgb_cycle: "RGB Cycle", glassmorphism: "Glassmorphism", celestial_forge: "Celestial Forge", neon_overdrive: "Neon Overdrive", matrix_reloaded: "Matrix Reloaded", stellar_drift: "Stellar Drift", neon_pulse: "Neon Pulse", obsidian_shard: "Obsidian Shard", retro_wave: "Retro Wave", pixel_dream: "Pixel Dream", lava: "Lava Floor", storm: "Storm", blackout: "Blackout" } as Record<string, string>)[option] || option.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
       const pageAdapted = pageOnlyModifierSet.has(option) || (key === "environment" && this.variant === "ks2" && ks2PageEnvironmentSet.has(option));
+      if (key === "matchDurationMs") return this.durationLabel(Number(option));
       return pageAdapted ? `${label} · PAGE MODE` : label;
     };
-    const select = (label: string, key: keyof Settings, options: string[]) => `<label>${label}<select data-setting="${key}">${options.map(option => `<option value="${option}" ${settings[key] === option ? "selected" : ""}>${optionLabel(option, key)}</option>`).join("")}</select></label>`;
+    const select = (label: string, key: keyof Settings, options: string[]) => `<label>${label}<select data-setting="${key}">${options.map(option => `<option value="${option}" ${String(settings[key]) === option ? "selected" : ""}>${optionLabel(option, key)}</option>`).join("")}</select></label>`;
     const npc = `<label>Right-side NPC<input data-setting="npcEnabled" type="checkbox" ${settings.npcEnabled ? "checked" : ""}></label>`;
     if (name === "creator") {
       this.panel.innerHTML = `<div data-creator-head><h2>Creative Sandbox · Live Match</h2><button data-minimize>Minimize</button></div><p class="notice">These objects share the live match physics. Fighters collide with and break them; the page underneath is restored when you leave.</p><section><strong>Starter scenes</strong><div class="controls"><button data-scene="neon">Neon tiles</button><button data-scene="ruins">Rift ruins</button><button data-scene="garden">Sky garden</button></div></section><section><label>Add image or video<input data-upload type="file" accept="image/*,video/mp4,video/webm,video/ogg"></label></section><section><label>Match replay · scrub while paused<input data-timeline type="range" min="0" max="${Math.max(0, this.snapshots.length - 1)}" value="${this.replayIndex ?? Math.max(0, this.snapshots.length - 1)}"></label><small data-replay-time>${Math.ceil((this.snapshots[this.replayIndex ?? Math.max(0, this.snapshots.length - 1)]?.at || 0) / 1000)}s</small><label>Video playback position<input data-video-timeline type="range" min="0" max="0" value="0"></label></section><section class="controls"><button data-rebuild>Rebuild scene</button><button data-save>Save scene</button><button data-open-scene>Open latest scene</button><button data-export>Export arena still</button><button data-record>Record 8-second replay</button></section><p class="notice" data-creator-status role="status">Local media and scenes stay on this device. Drag props to place them. Video stays muted.</p>`;
@@ -1029,12 +1038,12 @@ class PageBattle {
       const modeNote = this.variant === "classic" ? "The Classic catalog is preserved; Gravity Well, Time Distortion, and Chaos Vortex are clearly labeled page-mode adaptations." : "The KS2 theme menu and arena environment controls match the live game; solar flares, magnetic fields, void storm, and three extra force modifiers are labeled page-mode adaptations.";
       this.panel.innerHTML = `<h2>LoK Game Modifiers · M</h2><p class="notice">${modeNote} Fighter data comes from this version's Bestiary. Full-arena-only controls stay linked to the standalone game.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifierChoices)}${select("Environment", "environment", environmentChoices)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", themeChoices)}${select("Spawn fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
     } else {
-      this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC on right</button><p class="notice">Tap A/L or a team control to launch one fighter. Hold either to keep launching; right-side input takes over Player 2 for 12 seconds.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
+      this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC on right</button><p class="notice">Tap A/L or a team control to launch one fighter. Hold either to keep launching; right-side input takes over Player 2 for 12 seconds.</p>${select("Match duration", "matchDurationMs", matchDurations)}<p class="notice">The selected length applies to your next match. This match continues with its current timer.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
     }
     this.panel.querySelectorAll("[data-setting]").forEach(input => input.addEventListener("change", event => {
       const control = event.currentTarget as HTMLInputElement | HTMLSelectElement;
       const key = control.dataset.setting as keyof Settings;
-      (settings as unknown as Record<string, unknown>)[key] = key === "spawnMs" || key === "speed" ? Number(control.value) : key === "displayHp" || key === "npcEnabled" ? (control as HTMLInputElement).checked : control.value;
+      (settings as unknown as Record<string, unknown>)[key] = key === "spawnMs" || key === "speed" || key === "matchDurationMs" ? Number(control.value) : key === "displayHp" || key === "npcEnabled" ? (control as HTMLInputElement).checked : control.value;
       if (key === "npcSide" && settings.npcSide) this.lastNpcSide = settings.npcSide;
       this.updateHud();
       this.updateNpcButton();
