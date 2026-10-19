@@ -7,7 +7,7 @@ import { updateBehaviors } from "../ks2/src/systems/Behaviors";
 import type { Character as Ks2Character, Drop, GameState, Particle } from "../ks2/src/game/types";
 import { mapPageTeamScores, playerOneSide } from "./team-sides.mjs";
 import { classifyPageMaterial, materialDamage, materialDurability, materialStageLabel, type PageMaterial } from "./materials.mjs";
-import { impactImpulse, normalizeImpactDirection } from "./impact-physics.mjs";
+import { fighterTargetRecoil, impactImpulse, normalizeImpactDirection, resolveTargetContact } from "./impact-physics.mjs";
 import { pageEffects } from "./effects.mjs";
 
 type Variant = "classic" | "ks2";
@@ -471,16 +471,17 @@ class PageBattle {
       else { if (fighter.x < minX || fighter.x > maxX) { fighter.vx *= settings.environment === "bouncy" ? -1.15 : -1; fighter.x = Math.max(minX, Math.min(maxX, fighter.x)); } }
       if (fighter.y < minY || fighter.y > maxY) { fighter.vy *= settings.environment === "bouncy" ? -1.15 : -1; fighter.y = Math.max(minY, Math.min(maxY, fighter.y)); }
       for (const target of visibleTargets) {
-        if (target.destroyed || fighter.x < target.x - 20 || fighter.x > target.x + target.width + 20 || fighter.y < target.y - 20 || fighter.y > target.y + target.height + 20) continue;
-        const cx = Math.max(target.x, Math.min(fighter.x, target.x + target.width));
-        const cy = Math.max(target.y, Math.min(fighter.y, target.y + target.height));
-        if (Math.hypot(fighter.x - cx, fighter.y - cy) < 15 * fighter.scale) {
-          const incomingX = fighter.vx, incomingY = fighter.vy;
-          const impactSpeed = Math.abs(fighter.vx * (fighter.x - cx) + fighter.vy * (fighter.y - cy)) / Math.max(1, Math.hypot(fighter.x - cx, fighter.y - cy));
-          fighter.vx *= -0.78; fighter.vy *= -0.58;
-          fighter.vx += (Math.random() - 0.5) * 1.8; fighter.vy -= 0.35 + Math.random() * 0.55;
-          this.damageTarget(target, cx, cy, Math.max(0.6, Math.min(5, impactSpeed * 0.34)), fighter.team === 1 ? "#ff714e" : "#72dfff", impactSpeed, incomingX, incomingY);
-        }
+        if (target.destroyed) continue;
+        const contact = resolveTargetContact(fighter.x, fighter.y, target.x, target.y, target.width, target.height, 15 * fighter.scale);
+        if (!contact) continue;
+        const incomingX = fighter.vx, incomingY = fighter.vy;
+        const impactSpeed = Math.abs(incomingX * contact.normalX + incomingY * contact.normalY);
+        fighter.x = contact.fighterX; fighter.y = contact.fighterY;
+        const recoil = fighterTargetRecoil(incomingX, incomingY, contact.normalX, contact.normalY, settings.environment === "bouncy" ? 1.2 : 0.9);
+        const recoilSpeed = Math.hypot(recoil.vx, recoil.vy), maxRecoilSpeed = 16 * settings.speed;
+        const recoilScale = recoilSpeed > maxRecoilSpeed ? maxRecoilSpeed / recoilSpeed : 1;
+        fighter.vx = recoil.vx * recoilScale; fighter.vy = recoil.vy * recoilScale;
+        this.damageTarget(target, contact.x, contact.y, Math.max(0.6, Math.min(5, impactSpeed * 0.34)), fighter.team === 1 ? "#ff714e" : "#72dfff", impactSpeed, incomingX, incomingY);
       }
     }
     for (let i = 0; i < this.fighters.length; i++) {
