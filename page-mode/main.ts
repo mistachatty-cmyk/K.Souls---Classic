@@ -8,6 +8,7 @@ import type { Character as Ks2Character, Drop, GameState, Particle } from "../ks
 
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
+type HeldSpawn = { side: Side; lastSpawnAt: number };
 type Fighter = ReturnType<typeof spawnClassic> | ReturnType<typeof spawnKs2>;
 type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; lastHitAt: number; boss: boolean; stage: number; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number };
 type Projectile = { x: number; y: number; previousX: number; previousY: number; vx: number; vy: number; team: number; life: number; type: "laser" | "fireball"; color: string };
@@ -21,6 +22,7 @@ const themes = ["classic", "neon", "gameboy", "abyss", "gsix", "gilded", "hacker
 const modifiers = ["none", "sudden_death", "titans", "vampire_kiss", "magnet", "repel"];
 const environments = ["none", "ice", "blackhole", "bouncy", "wrap"];
 const weapons = ["standard", "roulette", "melee_mash", "ranged_test", "none"];
+const HOLD_REPEAT_MS = 150;
 
 let game: PageBattle | null = null;
 const createRunId = () => {
@@ -73,7 +75,8 @@ class PageBattle {
   previous = performance.now();
   npcAt = 0;
   lastNpcSide: Side = 2;
-  heldSides = new Map<number, { side: Side; lastSpawnAt: number }>();
+  heldSides = new Map<number, HeldSpawn>();
+  heldKeys = new Map<string, HeldSpawn>();
   scanAt = 0;
   observer: MutationObserver;
 
@@ -85,7 +88,7 @@ class PageBattle {
     this.root = this.host.attachShadow({ mode: "open" });
     this.root.innerHTML = `<style>
       :host{all:initial}*,*:before,*:after{box-sizing:border-box}.arena{position:fixed;inset:0;pointer-events:none;image-rendering:pixelated}.ui{font:600 13px system-ui,sans-serif;color:white;text-shadow:0 1px 3px black;pointer-events:auto}.top{position:fixed;left:12px;top:12px;right:12px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.badge,.controls,.panel{background:#101722ec;border:1px solid #80dcff99;box-shadow:0 8px 30px #0009;border-radius:12px}.badge{padding:10px 13px;max-width:48vw}.badge strong{color:#a8ebff}.controls{display:flex;gap:4px;flex-wrap:wrap;padding:6px}button,select,input{font:inherit}button{border:1px solid #ffffff66;border-radius:8px;background:#2b4058;color:#fff;padding:8px 10px;cursor:pointer}button:hover,button:focus-visible{background:#416b89;outline:2px solid #9eeaff}button[data-active="true"]{background:#357663}.bottom{position:fixed;bottom:12px;left:12px;right:12px;display:flex;justify-content:space-between;gap:10px}.spawn{font-size:16px;font-weight:800;min-height:52px;min-width:132px;touch-action:none;user-select:none}.spawn[data-spraying="true"]{filter:brightness(1.35);box-shadow:0 0 20px #8de6ff99}.spawn[data-side="1"]{background:#694050}.spawn[data-side="2"]{background:#375b79}.panel{position:fixed;right:12px;top:65px;width:min(430px,calc(100vw - 24px));max-height:min(75vh,720px);overflow:auto;padding:18px;display:none}.panel[data-open="true"]{display:block}.panel h2{margin:0 0 10px;font-size:22px}.panel section{margin:12px 0}.panel label{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0}.panel select,.panel input{max-width:55%;background:#172638;color:#fff;border:1px solid #668ca4;border-radius:6px;padding:6px}.panel .entry{border-bottom:1px solid #ffffff30;padding:8px 0}.panel .entry strong{display:block}.panel .entry small{color:#b9d7e4}.panel a{color:#8de6ff}.notice{color:#bcd3df;font-size:12px;line-height:1.4}.panel[data-minimized="true"]{height:58px;min-height:58px;overflow:hidden}.panel[data-minimized="true"]>:not([data-creator-head]){display:none}[data-creator-head]{display:flex;align-items:center;justify-content:space-between;gap:12px}[data-creator-head] h2{font-size:18px!important}.panel [data-timeline]{max-width:65%}.panel [data-upload]{max-width:62%}@media(max-width:640px){.top{flex-direction:column}.badge{max-width:100%;font-size:11px}.controls{max-width:100%}.controls button{padding:6px}.panel{top:105px}.spawn{min-width:112px}}
-    </style><canvas class="arena"></canvas><div class="ui"><div class="top"><div class="badge" role="status"></div><div class="controls"><button data-action="creator">Creative Sandbox</button><button data-action="modifiers" title="M">Modifiers M</button><button data-action="bestiary">Bestiary</button><button data-action="settings">Settings</button><button data-action="pause">Pause</button><button data-action="exit">Restore page</button></div></div><div class="panel" role="dialog" aria-label="Kinetic Souls controls"></div><div class="bottom"><button class="spawn" data-side="1" aria-label="Spawn left team; hold to repeat" title="A spawns one; hold to repeat">P1 · Spawn left</button><button class="spawn" data-side="2" aria-label="Spawn right team; hold to repeat" title="L spawns one; hold to repeat">P2 / NPC · Spawn right · L</button></div></div>`;
+    </style><canvas class="arena"></canvas><div class="ui"><div class="top"><div class="badge" role="status"></div><div class="controls"><button data-action="creator">Creative Sandbox</button><button data-action="modifiers" title="M">Modifiers M</button><button data-action="bestiary">Bestiary</button><button data-action="settings">Settings</button><button data-action="pause">Pause</button><button data-action="exit">Restore page</button></div></div><div class="panel" role="dialog" aria-label="Kinetic Souls controls"></div><div class="bottom"><button class="spawn" data-side="1" aria-label="Spawn left team; hold to repeat" title="Tap or hold A to launch the left team">P1 · Spawn left</button><button class="spawn" data-side="2" aria-label="Spawn right team; hold to repeat" title="Tap or hold L to launch the right team">P2 / NPC · Spawn right · L</button></div></div>`;
     document.body.appendChild(this.host);
     this.canvas = this.root.querySelector("canvas")!;
     this.ctx = this.canvas.getContext("2d")!;
@@ -119,6 +122,7 @@ class PageBattle {
     window.addEventListener("pointercancel", this.releaseHeld, true);
     window.addEventListener("blur", this.releaseAllHeld);
     window.addEventListener("keydown", this.keydown, true);
+    window.addEventListener("keyup", this.keyup, true);
     document.addEventListener("click", this.clickSide, true);
     window.addEventListener("resize", this.resize);
     window.addEventListener("scroll", this.refresh, { passive: true });
@@ -131,14 +135,35 @@ class PageBattle {
   }
 
   keydown = (event: KeyboardEvent) => {
-    if (event.repeat || /INPUT|TEXTAREA|SELECT/.test((event.target as HTMLElement)?.tagName || "")) return;
+    if (/INPUT|TEXTAREA|SELECT/.test((event.target as HTMLElement)?.tagName || "")) return;
     const key = event.key.toLowerCase();
-    if (key === "a" || key === "l") { event.preventDefault(); this.spawn(key === "a" ? 1 : 2, true); }
-    else if (key === "m") { event.preventDefault(); this.action("modifiers"); }
+    if (key === "a" || key === "l") {
+      event.preventDefault();
+      if (!this.heldKeys.has(key) && !this.matchFinished) {
+        const side = key === "a" ? 1 : 2;
+        this.spawn(side, true);
+        this.heldKeys.set(key, { side, lastSpawnAt: performance.now() });
+        const button = this.root.querySelector<HTMLElement>(`button[data-side="${side}"]`);
+        if (button) button.dataset.spraying = "true";
+      }
+      return;
+    }
+    if (event.repeat) return;
+    if (key === "m") { event.preventDefault(); this.action("modifiers"); }
     else if (key === "escape") { event.preventDefault(); this.action(this.panel.dataset.open === "true" ? "close" : "pause"); }
   };
+  keyup = (event: KeyboardEvent) => {
+    const key = event.key.toLowerCase();
+    const held = this.heldKeys.get(key);
+    if (!held) return;
+    this.heldKeys.delete(key);
+    if (![...this.heldKeys.values()].some(entry => entry.side === held.side) && ![...this.heldSides.values()].some(entry => entry.side === held.side)) {
+      const button = this.root.querySelector<HTMLElement>(`button[data-side="${held.side}"]`);
+      if (button) button.dataset.spraying = "false";
+    }
+  };
   releaseHeld = (event: PointerEvent) => { this.heldSides.delete(event.pointerId); };
-  releaseAllHeld = () => { this.heldSides.clear(); this.root.querySelectorAll<HTMLElement>('[data-spraying="true"]').forEach(button => { button.dataset.spraying = "false"; }); };
+  releaseAllHeld = () => { this.heldSides.clear(); this.heldKeys.clear(); this.root.querySelectorAll<HTMLElement>('[data-spraying="true"]').forEach(button => { button.dataset.spraying = "false"; }); };
   clickSide = (event: MouseEvent) => {
     const target = event.target;
     if (!(target instanceof Element) || this.host.contains(target) || target.closest('a,button,input,textarea,select,[contenteditable="true"],[data-lok-sandbox-object]')) return;
@@ -193,7 +218,7 @@ class PageBattle {
     const right = this.fighters.filter(f => !f.dead && f.team === 2).length;
     const time = Math.ceil(this.remainingMs / 1000);
     const control = performance.now() < this.rightControlUntil ? "Player 2" : settings.npcEnabled ? "NPC" : "Right idle";
-    this.hud.innerHTML = `<strong>KINETIC SOULS ${this.variant === "ks2" ? "2 · ALPHA" : "CLASSIC · 1"} · ${String(Math.floor(time / 60)).padStart(2, "0")}:${String(time % 60).padStart(2, "0")}</strong><br>P1 ${left} · ${this.teamKOs[1]} KOs · ${control} ${right} · ${this.teamKOs[2]} KOs<br>Page breaks ${this.score} · Chain ${this.chainBreaks} · ${this.matchFinished ? "MATCH COMPLETE" : "A / L to spawn · Creator tools in Creative Sandbox"}`;
+    this.hud.innerHTML = `<strong>KINETIC SOULS ${this.variant === "ks2" ? "2 · ALPHA" : "CLASSIC · 1"} · ${String(Math.floor(time / 60)).padStart(2, "0")}:${String(time % 60).padStart(2, "0")}</strong><br>P1 ${left} · ${this.teamKOs[1]} KOs · ${control} ${right} · ${this.teamKOs[2]} KOs<br>Page breaks ${this.score} · Chain ${this.chainBreaks} · ${this.matchFinished ? "MATCH COMPLETE" : "Tap to launch · Hold A/L or a side control for a stream"}`;
   }
 
   awardKo(fighter: Fighter, team: Side) {
@@ -216,10 +241,15 @@ class PageBattle {
       this.remainingMs = Math.max(0, this.remainingMs - elapsedMs);
       if (this.remainingMs <= 0) { this.finishMatch(); }
       if (!this.matchFinished) for (const [pointerId, held] of this.heldSides) {
-        if (now - held.lastSpawnAt < 250) continue;
+        if (now - held.lastSpawnAt < HOLD_REPEAT_MS) continue;
         this.spawn(held.side, true);
         held.lastSpawnAt = now;
         if (!this.root.querySelector(`button[data-side="${held.side}"][data-spraying="true"]`)) this.heldSides.delete(pointerId);
+      }
+      if (!this.matchFinished) for (const held of this.heldKeys.values()) {
+        if (now - held.lastSpawnAt < HOLD_REPEAT_MS) continue;
+        this.spawn(held.side, true);
+        held.lastSpawnAt = now;
       }
       if (!this.matchFinished && settings.npcEnabled && now >= this.rightControlUntil && now > this.npcAt) { this.spawn(2, false); this.npcAt = now + settings.spawnMs; }
       if (now > this.scanAt) { this.scan(); this.scanAt = now + 900; }
@@ -431,6 +461,7 @@ class PageBattle {
     if (this.matchFinished) return;
     this.matchFinished = true; this.paused = true;
     this.heldSides.clear();
+    this.heldKeys.clear();
     this.root.querySelectorAll<HTMLElement>('[data-spraying="true"]').forEach(button => { button.dataset.spraying = "false"; });
     const result = this.teamKOs[1] === this.teamKOs[2] ? "Draw" : this.teamKOs[1] > this.teamKOs[2] ? "Player 1 wins" : "Player 2 / NPC wins";
     this.completeRun(result);
@@ -821,7 +852,7 @@ class PageBattle {
     } else if (name === "modifiers") {
       this.panel.innerHTML = `<h2>Live modifiers · M</h2><p class="notice">Changes apply to this live-page battle. DVD mode bounces without team damage. The standalone arena has the remaining modifiers.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifiers)}${select("Environment", "environment", environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", this.variant === "classic" ? themes : [...themes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "nebula"])}${select("Fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
     } else {
-      this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC on right</button><p class="notice">A spawns Player 1 on the left. L or right-side input takes over Player 2 for 12 seconds; then the NPC resumes when enabled.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
+      this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC on right</button><p class="notice">Tap A/L or a team control to launch one fighter. Hold either to keep launching; right-side input takes over Player 2 for 12 seconds.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
     }
     this.panel.querySelectorAll("[data-setting]").forEach(input => input.addEventListener("change", event => {
       const control = event.currentTarget as HTMLInputElement | HTMLSelectElement;
@@ -839,7 +870,7 @@ class PageBattle {
   stop() {
     this.running = false; cancelAnimationFrame(this.frame); this.observer.disconnect();
     this.heldSides.clear();
-    window.removeEventListener("keydown", this.keydown, true); window.removeEventListener("resize", this.resize); window.removeEventListener("scroll", this.refresh);
+    window.removeEventListener("keydown", this.keydown, true); window.removeEventListener("keyup", this.keyup, true); window.removeEventListener("resize", this.resize); window.removeEventListener("scroll", this.refresh);
     window.removeEventListener("pointerup", this.releaseHeld, true); window.removeEventListener("pointercancel", this.releaseHeld, true); window.removeEventListener("blur", this.releaseAllHeld);
     document.removeEventListener("click", this.clickSide, true);
     for (const target of this.targets.values()) if (target.dynamic) {
