@@ -9,14 +9,16 @@ import { mapPageTeamScores, playerOneSide } from "./team-sides.mjs";
 import { classifyPageMaterial, materialDamage, materialDurability, materialStageLabel, type PageMaterial } from "./materials.mjs";
 import { fighterTargetRecoil, impactImpulse, normalizeImpactDirection, resolveTargetContact } from "./impact-physics.mjs";
 import { pageEffects } from "./effects.mjs";
+import { createFracturePattern } from "./fracture.mjs";
 
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
 type HeldSpawn = { side: Side; lastSpawnAt: number };
 type Fighter = ReturnType<typeof spawnClassic> | ReturnType<typeof spawnKs2>;
-type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; impactDX: number; impactDY: number; lastHitAt: number; boss: boolean; stage: number; material: PageMaterial; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number };
+type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; impactDX: number; impactDY: number; lastHitAt: number; boss: boolean; stage: number; material: PageMaterial; fractures: FractureMark[]; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number };
 type Projectile = { x: number; y: number; previousX: number; previousY: number; vx: number; vy: number; team: number; life: number; type: "laser" | "fireball"; color: string };
 type FloatingText = { x: number; y: number; value: string; color: string; life: number };
+type FractureMark = { segments: ReturnType<typeof createFracturePattern>; color: string; strength: number; createdAt: number };
 type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number };
 type Shockwave = { x: number; y: number; radius: number; maxRadius: number; life: number; maxLife: number; color: string; width: number };
 type Options = { variant?: Variant };
@@ -236,7 +238,7 @@ class PageBattle {
       // Break individual pieces of the page, not a full-height layout wrapper.
       if (rect.width < 40 || rect.height < 20 || rect.width > Math.min(innerWidth * 0.9, 780) || rect.height > 480 || rect.width * rect.height > 210000 || rect.bottom < -150 || rect.top > innerHeight + 150) continue;
       count++;
-      if (!this.targets.has(element)) this.targets.set(element, { element, x: 0, y: 0, width: 0, height: 0, damage: 0, destroyed: false, impactX: 0, impactY: 0, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName) });
+      if (!this.targets.has(element)) this.targets.set(element, { element, x: 0, y: 0, width: 0, height: 0, damage: 0, destroyed: false, impactX: 0, impactY: 0, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName), fractures: [] });
       const target = this.targets.get(element)!;
       target.x = rect.left + scrollX; target.y = rect.top + scrollY; target.width = rect.width; target.height = rect.height;
       seen.add(element);
@@ -546,7 +548,7 @@ class PageBattle {
     element.dataset.lokSandboxObject = "";
     element.style.cssText += `;position:absolute;left:${x}px;top:${y}px;width:${width}px;height:${height}px;object-fit:contain;z-index:2147483643;border:2px solid #93eaff;box-shadow:0 8px 24px #0008;cursor:grab;touch-action:none`;
     document.body.appendChild(element);
-    const target: Target = { element, x, y, width, height, damage: 0, destroyed: false, impactX: x + width / 2, impactY: y + height / 2, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName, true), dynamic: true, vx: (Math.random() - .5) * 3, vy: -2, homeX: x, homeY: y };
+    const target: Target = { element, x, y, width, height, damage: 0, destroyed: false, impactX: x + width / 2, impactY: y + height / 2, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName, true), fractures: [], dynamic: true, vx: (Math.random() - .5) * 3, vy: -2, homeX: x, homeY: y };
     this.targets.set(element, target);
     let drag: { px: number; py: number; x: number; y: number } | null = null;
     element.addEventListener("pointerdown", event => { if (element instanceof HTMLVideoElement && event.offsetY > element.clientHeight - 42) return; drag = { px: event.clientX, py: event.clientY, x: target.x, y: target.y }; element.setPointerCapture(event.pointerId); element.style.cursor = "grabbing"; event.preventDefault(); });
@@ -572,7 +574,7 @@ class PageBattle {
   rebuildScene() {
     this.damage.length = 0;
     for (const target of this.targets.values()) {
-      target.damage = 0; target.destroyed = false; target.stage = 0; target.lastHitAt = 0;
+      target.damage = 0; target.destroyed = false; target.stage = 0; target.lastHitAt = 0; target.fractures = [];
       if (target.dynamic) { target.x = target.homeX ?? target.x; target.y = target.homeY ?? target.y; target.vx = target.vy = 0; const el = target.element as HTMLElement; el.style.display = ""; el.style.left = `${target.x}px`; el.style.top = `${target.y}px`; }
     }
     this.floatingTexts.push({ x: scrollX + innerWidth / 2, y: scrollY + 120, value: "SCENE REBUILT", color: "#9eeaff", life: 1000 });
@@ -770,6 +772,7 @@ class PageBattle {
     const appliedDamage = materialDamage(amount, target.material);
     target.damage += appliedDamage;
     target.impactX = x; target.impactY = y; target.impactDX = directionX; target.impactDY = directionY; target.lastHitAt = performance.now();
+    this.recordFracture(target, x, y, directionX, directionY, appliedDamage, color);
     if (target.dynamic) { const impulse = impactImpulse(force); target.vx = (target.vx || 0) + directionX * impulse; target.vy = (target.vy || 0) + directionY * impulse; }
     this.shockwaves.push({ x, y, radius: 3, maxRadius: 16 + Math.min(32, force * 2.2), life: 220, maxLife: 220, color, width: 2 + Math.min(3, force * 0.12) });
     this.screenShake = Math.min(9, Math.max(this.screenShake, Math.min(7, force * 0.24)));
@@ -803,6 +806,15 @@ class PageBattle {
     return target.boss ? base * 3 : base;
   }
 
+  recordFracture(target: Target, x: number, y: number, directionX: number, directionY: number, amount: number, color: string) {
+    const strength = Math.min(1.6, Math.max(0.2, amount / this.targetLimit(target) * 5));
+    const seed = (Math.imul(target.fractures.length + 1, 2654435761) ^ Math.floor(x * 17) ^ Math.floor(y * 31) ^ Math.round(target.damage * 101)) >>> 0;
+    const segments = createFracturePattern(target.width, target.height, x - target.x, y - target.y, directionX, directionY, strength, seed);
+    if (!segments.length) return;
+    target.fractures.push({ segments, color, strength, createdAt: performance.now() });
+    if (target.fractures.length > 6) target.fractures.shift();
+  }
+
   registerBreak(x: number, y: number, color: string) {
     const now = performance.now();
     this.breakCombo = now < this.comboUntil ? Math.min(8, this.breakCombo + 1) : 1;
@@ -824,6 +836,7 @@ class PageBattle {
       const impactX = target.x + target.width / 2, impactY = target.y + target.height / 2;
       const [directionX, directionY] = normalizeImpactDirection(impactX - x, impactY - y);
       target.impactX = impactX; target.impactY = impactY; target.impactDX = directionX; target.impactDY = directionY; target.lastHitAt = performance.now(); target.damage += amount;
+      this.recordFracture(target, impactX, impactY, directionX, directionY, amount, color);
       if (target.dynamic) { const impulse = impactImpulse(source.boss ? 12 : 7) * (1 - distance / radius); target.vx = (target.vx || 0) + directionX * impulse; target.vy = (target.vy || 0) + directionY * impulse; }
       const stage = Math.min(3, Math.floor(target.damage / this.targetLimit(target) * 4));
       if (stage > target.stage) { target.stage = stage; this.floatingTexts.push({ x: impactX, y: impactY - 28, value: materialStageLabel(target.material, stage), color, life: 850 }); }
@@ -953,22 +966,29 @@ class PageBattle {
       ctx.save();
       if (target.damage > 0) {
         ctx.beginPath(); ctx.rect(target.x, target.y, target.width, target.height); ctx.clip();
-        ctx.globalAlpha = age < 110 ? 0.8 : 0.38 + strength * 0.25;
-        ctx.strokeStyle = this.variant === "classic" ? "#ffb14e" : "#c7a6ff"; ctx.lineWidth = 2 + strength * 2;
-        ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 8 + strength * 12;
-        const reach = 9 + strength * 28, directionX = target.impactDX, directionY = target.impactDY;
-        const perpendicularX = -directionY, perpendicularY = directionX;
-        const endX = x + directionX * reach, endY = y + directionY * reach;
-        ctx.beginPath(); ctx.moveTo(x - directionX * 4, y - directionY * 4); ctx.lineTo(endX, endY);
-        for (const branch of [0.38, 0.68]) {
-          const branchX = x + directionX * reach * branch, branchY = y + directionY * reach * branch;
-          const branchLength = reach * (0.36 - branch * 0.12);
-          ctx.moveTo(branchX, branchY);
-          ctx.lineTo(branchX + perpendicularX * branchLength - directionX * branchLength * 0.38, branchY + perpendicularY * branchLength - directionY * branchLength * 0.38);
-          ctx.moveTo(branchX, branchY);
-          ctx.lineTo(branchX - perpendicularX * branchLength - directionX * branchLength * 0.38, branchY - perpendicularY * branchLength - directionY * branchLength * 0.38);
+        const colors: Record<PageMaterial, string> = { glass: "#e7fbff", paper: "#fff0a6", stone: "#d5dce9", digital: this.variant === "classic" ? "#ffb14e" : "#c7a6ff" };
+        for (const fracture of target.fractures) {
+          const fresh = effects.animated ? Math.max(0, 1 - (now - fracture.createdAt) / 180) : 0;
+          const alpha = Math.min(0.9, 0.24 + fracture.strength * 0.25 + fresh * 0.3 + strength * 0.12);
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = target.material === "glass" ? "rgba(240,252,255,.85)" : colors[target.material];
+          ctx.lineWidth = target.material === "stone" ? 1.35 + target.stage * 0.38 : target.material === "paper" ? 0.9 + target.stage * 0.18 : 0.75 + target.stage * 0.2;
+          ctx.shadowColor = target.material === "glass" || target.material === "digital" ? fracture.color : "transparent";
+          ctx.shadowBlur = target.material === "glass" ? 3 + fresh * 7 : target.material === "digital" ? 2 + fresh * 4 : 0;
+          ctx.beginPath();
+          for (const segment of fracture.segments) {
+            ctx.moveTo(target.x + segment.x1, target.y + segment.y1);
+            ctx.lineTo(target.x + segment.x2, target.y + segment.y2);
+          }
+          ctx.stroke();
+          if (target.material === "glass") {
+            ctx.globalAlpha = alpha * 0.38; ctx.strokeStyle = fracture.color; ctx.lineWidth = 0.55; ctx.shadowBlur = 0;
+            ctx.stroke();
+          }
         }
-        ctx.stroke();
+        ctx.globalAlpha = effects.animated && age < 90 ? 0.75 : 0.34 + strength * 0.16;
+        ctx.strokeStyle = colors[target.material]; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.arc(x, y, 2.4 + strength * 3.2, 0, Math.PI * 2); ctx.stroke();
       }
       if (target.boss) {
         if (target.damage === 0) ctx.globalAlpha = 0.75;
