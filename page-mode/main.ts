@@ -6,12 +6,13 @@ import { getWeaponTip as ks2WeaponTip } from "../ks2/src/game/utils";
 import { updateBehaviors } from "../ks2/src/systems/Behaviors";
 import type { Character as Ks2Character, Drop, GameState, Particle } from "../ks2/src/game/types";
 import { mapPageTeamScores, playerOneSide } from "./team-sides.mjs";
+import { classifyPageMaterial, materialDamage, materialDurability, materialStageLabel, type PageMaterial } from "./materials.mjs";
 
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
 type HeldSpawn = { side: Side; lastSpawnAt: number };
 type Fighter = ReturnType<typeof spawnClassic> | ReturnType<typeof spawnKs2>;
-type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; lastHitAt: number; boss: boolean; stage: number; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number };
+type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; lastHitAt: number; boss: boolean; stage: number; material: PageMaterial; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number };
 type Projectile = { x: number; y: number; previousX: number; previousY: number; vx: number; vy: number; team: number; life: number; type: "laser" | "fireball"; color: string };
 type FloatingText = { x: number; y: number; value: string; color: string; life: number };
 type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number };
@@ -233,7 +234,7 @@ class PageBattle {
       // Break individual pieces of the page, not a full-height layout wrapper.
       if (rect.width < 40 || rect.height < 20 || rect.width > Math.min(innerWidth * 0.9, 780) || rect.height > 480 || rect.width * rect.height > 210000 || rect.bottom < -150 || rect.top > innerHeight + 150) continue;
       count++;
-      if (!this.targets.has(element)) this.targets.set(element, { element, x: 0, y: 0, width: 0, height: 0, damage: 0, destroyed: false, impactX: 0, impactY: 0, lastHitAt: 0, boss: false, stage: 0 });
+      if (!this.targets.has(element)) this.targets.set(element, { element, x: 0, y: 0, width: 0, height: 0, damage: 0, destroyed: false, impactX: 0, impactY: 0, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName) });
       const target = this.targets.get(element)!;
       target.x = rect.left + scrollX; target.y = rect.top + scrollY; target.width = rect.width; target.height = rect.height;
       seen.add(element);
@@ -535,7 +536,7 @@ class PageBattle {
     element.dataset.lokSandboxObject = "";
     element.style.cssText += `;position:absolute;left:${x}px;top:${y}px;width:${width}px;height:${height}px;object-fit:contain;z-index:2147483643;border:2px solid #93eaff;box-shadow:0 8px 24px #0008;cursor:grab;touch-action:none`;
     document.body.appendChild(element);
-    const target: Target = { element, x, y, width, height, damage: 0, destroyed: false, impactX: x + width / 2, impactY: y + height / 2, lastHitAt: 0, boss: false, stage: 0, dynamic: true, vx: (Math.random() - .5) * 3, vy: -2, homeX: x, homeY: y };
+    const target: Target = { element, x, y, width, height, damage: 0, destroyed: false, impactX: x + width / 2, impactY: y + height / 2, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName, true), dynamic: true, vx: (Math.random() - .5) * 3, vy: -2, homeX: x, homeY: y };
     this.targets.set(element, target);
     let drag: { px: number; py: number; x: number; y: number } | null = null;
     element.addEventListener("pointerdown", event => { if (element instanceof HTMLVideoElement && event.offsetY > element.clientHeight - 42) return; drag = { px: event.clientX, py: event.clientY, x: target.x, y: target.y }; element.setPointerCapture(event.pointerId); element.style.cursor = "grabbing"; event.preventDefault(); });
@@ -755,16 +756,17 @@ class PageBattle {
 
   damageTarget(target: Target, x: number, y: number, amount: number, color: string, force: number) {
     if (target.destroyed) return;
-    target.damage += amount;
+    const appliedDamage = materialDamage(amount, target.material);
+    target.damage += appliedDamage;
     target.impactX = x; target.impactY = y; target.lastHitAt = performance.now();
     this.shockwaves.push({ x, y, radius: 3, maxRadius: 16 + Math.min(32, force * 2.2), life: 220, maxLife: 220, color, width: 2 + Math.min(3, force * 0.12) });
     this.screenShake = Math.min(9, Math.max(this.screenShake, Math.min(7, force * 0.24)));
-    this.floatingTexts.push({ x, y: y - 10, value: `-${Math.round(amount * 10)}`, color, life: 520 });
+    this.floatingTexts.push({ x, y: y - 10, value: `-${Math.round(appliedDamage * 10)}`, color, life: 520 });
     const limit = this.targetLimit(target);
     const stage = Math.min(3, Math.floor(target.damage / limit * 4));
     if (stage > target.stage) {
       target.stage = stage;
-      this.floatingTexts.push({ x, y: y - 28, value: target.boss ? `WARDEN PHASE ${stage}` : ["", "CRACKED", "BREAKING", "UNSTABLE"][stage], color: target.boss ? "#ffe681" : color, life: 850 });
+      this.floatingTexts.push({ x, y: y - 28, value: target.boss ? `WARDEN PHASE ${stage}` : materialStageLabel(target.material, stage), color: target.boss ? "#ffe681" : color, life: 850 });
       this.screenShake = Math.max(this.screenShake, 2 + stage * 1.1);
     }
     const count = Math.min(9, Math.max(3, Math.round(amount * 1.6)));
@@ -785,7 +787,7 @@ class PageBattle {
   }
 
   targetLimit(target: Target) {
-    const base = Math.max(2.5, Math.min(9, target.width * target.height / 11000));
+    const base = materialDurability(Math.max(2.5, Math.min(9, target.width * target.height / 11000)), target.material);
     return target.boss ? base * 3 : base;
   }
 
@@ -806,11 +808,11 @@ class PageBattle {
     this.chainBreaks += nearby.length;
     this.floatingTexts.push({ x, y: y - 42, value: `CHAIN REACTION ×${nearby.length}`, color, life: 1000 });
     for (const { target, distance } of nearby) {
-      const amount = (source.boss ? 2.4 : 1.8) * (1 - distance / radius);
+      const amount = materialDamage((source.boss ? 2.4 : 1.8) * (1 - distance / radius), target.material);
       const impactX = target.x + target.width / 2, impactY = target.y + target.height / 2;
       target.impactX = impactX; target.impactY = impactY; target.lastHitAt = performance.now(); target.damage += amount;
       const stage = Math.min(3, Math.floor(target.damage / this.targetLimit(target) * 4));
-      if (stage > target.stage) { target.stage = stage; this.floatingTexts.push({ x: impactX, y: impactY - 28, value: ["", "CRACKED", "BREAKING", "UNSTABLE"][stage], color, life: 850 }); }
+      if (stage > target.stage) { target.stage = stage; this.floatingTexts.push({ x: impactX, y: impactY - 28, value: materialStageLabel(target.material, stage), color, life: 850 }); }
       this.screenShake = Math.max(this.screenShake, source.boss ? 8 : 5);
       if (target.damage >= this.targetLimit(target)) {
         target.destroyed = true; this.score++;
