@@ -12,12 +12,13 @@ import type {
   SkinType, LokPassportData, GameState, Character, Sabre, Particle, 
   Projectile, Ghost, FloatingText, KillFeedMsg, Drop, Essence, Portal 
 } from "../game/types";
+import { isKineticModelStyle, readKineticModelStyle, writeKineticModelStyle } from "../game/modelStyle";
 import { 
   spawnCharacter, getPartDamage, getRandomWeapon, resetCharIdCounter, getCharIdCounter 
 } from "../systems/Spawner";
 import { pushParticle, spawnExplosion } from "../systems/Particles";
 import { getTeamColor, renderChar, drawWeapon } from "../render/DrawEntities";
-import { drawThemeBackground, drawBtn, drawMainMenu, drawLokMenu, drawSettingsMenu, drawGameOver, drawBestiary } from "../render/DrawUI";
+import { drawThemeBackground, drawBtn, drawMainMenu, drawLokMenu, drawSettingsMenu, drawGameOver, drawBestiary, KINETIC_MODEL_OPTIONS } from "../render/DrawUI";
 import { drawWorld } from "../render/DrawWorld";
 import { updateBehaviors } from "../systems/Behaviors";
 import { setupInputListeners } from "../systems/Input";
@@ -69,6 +70,19 @@ const getYouTubeId = (url: string) => {
   return match ? match[1] : "";
 };
 
+const MODEL_SETTINGS_CHANNEL = "gsix.kinetic-souls.settings.v1";
+const TUTORIAL_SEEN_KEY = "kinetic-souls-2.tutorial-seen.v1";
+const TRUSTED_GSIX_ORIGINS = ["https://gsix.online", "https://www.gsix.online", "http://localhost:5173"];
+function getGsixParentOrigin(): string | null {
+  if (typeof window === "undefined" || window.parent === window) return null;
+  try {
+    const origin = new URL(document.referrer).origin;
+    return TRUSTED_GSIX_ORIGINS.includes(origin) ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * KineticSouls Main Game Component
  * 
@@ -116,6 +130,10 @@ export default function KineticSouls() {
   const [p2Skin, setP2Skin] = useState<SkinType>("default");
   const [currentSplash, setCurrentSplash] = useState(() => SPLASH_ARCHIVE[Math.floor(Math.random() * SPLASH_ARCHIVE.length)]);
   const [showMobileUI, setShowMobileUI] = useState(false);
+  const [showHowToPlay, setShowHowToPlay] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try { return window.localStorage.getItem(TUTORIAL_SEEN_KEY) !== "1"; } catch { return false; }
+  });
   const [showTitleShop, setShowTitleShop] = useState(false);
   const [purchasedTitles, setPurchasedTitles] = useState<string[]>(["default"]);
   const [selectedTitle, setSelectedTitle] = useState<string>("default");
@@ -129,6 +147,10 @@ export default function KineticSouls() {
     y: number;
   } | null>(null);
   const [, setTick] = useState(0);
+  const dismissHowToPlay = useCallback(() => {
+    try { window.localStorage.setItem(TUTORIAL_SEEN_KEY, "1"); } catch { /* Keep the tutorial dismissible if storage is unavailable. */ }
+    setShowHowToPlay(false);
+  }, []);
   const [liveMenuWidth, setLiveMenuWidth] = useState(310);
   const [isResizingMenu, setIsResizingMenu] = useState(false);
   const joyRef = useRef({ active: false, startX: 0, startY: 0, dx: 0, dy: 0 });
@@ -193,6 +215,22 @@ export default function KineticSouls() {
     return () => clearTimeout(timer);
   }, [themeNotify]);
 
+  useEffect(() => {
+    if (!showHowToPlay) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        dismissHowToPlay();
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape, true);
+    return () => window.removeEventListener("keydown", closeOnEscape, true);
+  }, [showHowToPlay, dismissHowToPlay]);
+
   // Attach the cache securely to the state reference so the drawing systems can access it
   useEffect(() => {
     (stateRef.current as any).spriteCache = spriteCacheRef.current;
@@ -211,6 +249,7 @@ export default function KineticSouls() {
      viewMode: "standard",
      minimapPosition: "bottom-right",
      weaponStyle: "standard",
+     kineticStyle: readKineticModelStyle(),
      environment: "none",
      p1Score: 0,
      p2Score: 0,
@@ -331,6 +370,53 @@ export default function KineticSouls() {
      bossKills: 0,
      riftPortalCooldown: 0,
    });
+
+  const selectKineticModelStyle = useCallback((style: unknown) => {
+    if (!isKineticModelStyle(style)) return;
+    stateRef.current.kineticStyle = style;
+    writeKineticModelStyle(style);
+    spriteCacheRef.current.clear();
+    const parentOrigin = getGsixParentOrigin();
+    if (parentOrigin) {
+      window.parent.postMessage({ channel: MODEL_SETTINGS_CHANNEL, type: "save", modelStyle: style }, parentOrigin);
+    }
+  }, []);
+
+  useEffect(() => {
+    const parentOrigin = getGsixParentOrigin();
+    if (!parentOrigin) return;
+    let loadInProgress = false;
+    let helloTimer: number | undefined;
+    const send = (type: string, extra: Record<string, unknown> = {}) => {
+      window.parent.postMessage({ channel: MODEL_SETTINGS_CHANNEL, type, ...extra }, parentOrigin);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window.parent || event.origin !== parentOrigin) return;
+      const message = event.data;
+      if (!message || message.channel !== MODEL_SETTINGS_CHANNEL || typeof message.type !== "string") return;
+      if (message.type === "ready") {
+        window.clearInterval(helloTimer);
+        if (!loadInProgress) {
+          loadInProgress = true;
+          send("load", { localModelStyle: readKineticModelStyle() });
+        }
+      } else if (message.type === "loaded") {
+        loadInProgress = false;
+        const style = isKineticModelStyle(message.modelStyle) ? message.modelStyle : readKineticModelStyle();
+        stateRef.current.kineticStyle = style;
+        writeKineticModelStyle(style);
+        spriteCacheRef.current.clear();
+        setTick((tick) => tick + 1);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    send("hello");
+    helloTimer = window.setInterval(() => send("hello"), 500);
+    return () => {
+      window.clearInterval(helloTimer);
+      window.removeEventListener("message", onMessage);
+    };
+  }, []);
 
   const refMode = useRef<GameMode>("timer");
   const refOpp = useRef<OpponentMode>("pvp");
@@ -2406,7 +2492,7 @@ export default function KineticSouls() {
 
           for (const c of frame.chars) {
             if (c.dead) continue;
-            renderChar(ctx, c, c.flashFrames > 0, 1, state.theme, state.devMode, false, ts, (state as any).kineticStyle);
+            renderChar(ctx, c, c.flashFrames > 0, 1, state.theme, state.devMode, false, ts, state.kineticStyle);
           }
           for (const p of frame.parts) {
             const alpha = Math.max(0, p.life / p.maxLife);
@@ -2518,6 +2604,10 @@ export default function KineticSouls() {
         },
         updateConfig: (key: string, value: any) => {
           if (value === "header") return; // Safely ignore category header clicks
+          if (key === "kineticStyle" && isKineticModelStyle(value)) {
+            selectKineticModelStyle(value);
+            return;
+          }
           if (key === 'mode') { refs.mode.current = value; stateRef.current.mode = value; }
           else if (key === 'theme') { refs.theme.current = value; stateRef.current.theme = value; spriteCacheRef.current.clear(); }
           else if (key === 'mod') { refs.mod.current = value; stateRef.current.modifier = value; }
@@ -2650,6 +2740,35 @@ export default function KineticSouls() {
         position: "relative",
       }}
     >
+      {screenRef.current === "menu" && (
+        <button
+          type="button"
+          onClick={() => setShowHowToPlay(true)}
+          style={{ position: "absolute", top: 54, left: "50%", transform: "translateX(-50%)", zIndex: 110, padding: "8px 14px", background: "rgba(12,12,24,0.9)", color: "#fff", border: "1px solid rgba(255,255,255,0.35)", borderRadius: 4, fontFamily: "monospace", fontWeight: "bold", fontSize: 11, cursor: "pointer" }}
+        >
+          HOW TO PLAY
+        </button>
+      )}
+
+      {showHowToPlay && (
+        <div role="dialog" aria-modal="true" aria-labelledby="kinetic-tutorial-title" style={{ position: "fixed", inset: 0, zIndex: 1000, display: "grid", placeItems: "center", padding: 16, background: "rgba(0,0,0,0.78)" }}>
+          <section style={{ width: "min(520px, 100%)", maxHeight: "calc(100dvh - 32px)", overflowY: "auto", boxSizing: "border-box", padding: 24, background: "#10101c", border: "1px solid #8c76d9", color: "#f5f3ff", fontFamily: "monospace", boxShadow: "0 16px 48px rgba(0,0,0,0.55)" }}>
+            <p style={{ margin: "0 0 6px", color: "#b6a1ff", fontSize: 11, letterSpacing: 2 }}>QUICK START</p>
+            <h2 id="kinetic-tutorial-title" style={{ margin: "0 0 18px", fontSize: 24 }}>How to play</h2>
+            <ol style={{ margin: 0, paddingLeft: 22, color: "#d4d0e5", lineHeight: 1.7, fontSize: 14 }}>
+              <li>Choose a timer or score match, then press Start Game.</li>
+              <li>Press <strong>A</strong> to spawn Player 1 and <strong>L</strong> to spawn Player 2. Fighters battle automatically; spawn more to build each side.</li>
+              <li>Press <strong>Esc</strong> to pause or resume. On touch screens, open <strong>Mobile UI</strong> for spawn and pause controls.</li>
+              <li>Open Settings to pick a fighter look. <strong>V2 / HD</strong> is the default; your choice applies to every fighter.</li>
+            </ol>
+            <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button type="button" autoFocus onClick={dismissHowToPlay} style={{ padding: "10px 14px", background: "transparent", color: "#d4d0e5", border: "1px solid #514d66", cursor: "pointer", fontFamily: "monospace" }}>CLOSE</button>
+              <button type="button" onClick={() => { dismissHowToPlay(); startGame(); }} style={{ padding: "10px 14px", background: "#5947a4", color: "#fff", border: "1px solid #9a86f0", cursor: "pointer", fontFamily: "monospace", fontWeight: "bold" }}>START MATCH</button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {/* Main Menu Passport Overlay */}
       {screenRef.current === "menu" && (
         <div style={{ position: "absolute", top: 12, left: 12, zIndex: 100 }}>
@@ -3078,10 +3197,30 @@ export default function KineticSouls() {
         </div>
       )}
       
+      {screenRef.current === "settings_menu" && (
+        <div
+          role="group"
+          aria-label="Fighter model style"
+          style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}
+        >
+          <span aria-live="polite">Selected fighter model: {KINETIC_MODEL_OPTIONS.find((option) => option.id === stateRef.current.kineticStyle)?.label ?? "V2 / HD"}</span>
+          {KINETIC_MODEL_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={stateRef.current.kineticStyle === option.id}
+              onClick={() => { selectKineticModelStyle(option.id); setTick((tick) => tick + 1); }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
       <canvas
         ref={canvasRef}
         width={ARENA_W}
         height={ARENA_H + SCOREBOARD_H}
+        aria-label="Kinetic Souls 2 game. Open Settings to choose a fighter model."
         onPointerDown={(e) => {
           const st = stateRef.current;
           if (st.hud && st.viewMode === "standard" && screenRef.current === "game") {
@@ -3279,23 +3418,13 @@ export default function KineticSouls() {
             >
               🎨 {themeMap[stateRef.current.theme] || "THEME"}
             </button>
-            <button
-              onClick={() => {
-                const styles = ["block", "classic", "hd", "sabre"];
-                const idx = styles.indexOf((stateRef.current as any).kineticStyle || "block");
-                (stateRef.current as any).kineticStyle = styles[(idx + 1) % styles.length];
-                spriteCacheRef.current.clear(); 
-                setTick(t => t + 1);
-              }}
-              style={{ background: "rgba(30,30,30,0.8)", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "10px", fontSize: "12px", fontFamily: "monospace", fontWeight: "bold", borderRadius: "8px", cursor: "pointer", backdropFilter: "blur(4px)", flex: 1, touchAction: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-            >
-              ✨ STYLE: {((stateRef.current as any).kineticStyle || "block").toUpperCase()}
-            </button>
           </div>
 
           <div style={{ display: "flex", gap: 12, justifyContent: "space-between", width: "100%", pointerEvents: "auto" }}>
           <button
-            onPointerDown={(e) => { e.preventDefault(); spawnP1(); }}
+            type="button"
+            aria-label="Spawn Player 1 fighter"
+            onClick={spawnP1}
             style={{
               background: "rgba(255,80,80,0.7)",
               color: "#fff",
@@ -3314,7 +3443,9 @@ export default function KineticSouls() {
             P1 SPAWN
           </button>
           <button
-            onPointerDown={(e) => { e.preventDefault(); spawnP2(); }}
+            type="button"
+            aria-label="Spawn Player 2 fighter"
+            onClick={spawnP2}
             style={{
               background: "rgba(80,100,255,0.7)",
               color: "#fff",
@@ -3356,13 +3487,17 @@ export default function KineticSouls() {
           </div>
           <div style={{ display: "flex", gap: 12, justifyContent: "space-between", width: "100%", pointerEvents: "auto" }}>
             <button
-              onPointerDown={(e) => { e.preventDefault(); setShowLiveMenu(v => !v); }}
+              type="button"
+              aria-label="Toggle live game modifiers"
+              onClick={() => setShowLiveMenu(v => !v)}
               style={{ padding: "10px", borderRadius: "8px", color: "#ffd700", background: showLiveMenu ? "rgba(255,215,0,0.2)" : "rgba(30,30,30,0.8)", border: "1px solid #ffd700", fontWeight: "bold", flex: 1, cursor: "pointer", touchAction: "none" }}
             >
               ⚙️ LIVE MODS
             </button>
             <button
-              onPointerDown={(e) => { e.preventDefault(); stateRef.current.paused = !stateRef.current.paused; setTick(t=>t+1); }}
+              type="button"
+              aria-label={stateRef.current.paused ? "Resume match" : "Pause match"}
+              onClick={() => { stateRef.current.paused = !stateRef.current.paused; setTick(t=>t+1); }}
               style={{ padding: "10px", borderRadius: "8px", color: "#fff", background: "rgba(30,30,30,0.8)", border: "1px solid rgba(255,255,255,0.2)", fontWeight: "bold", flex: 1, cursor: "pointer", touchAction: "none" }}
             >
               {stateRef.current.paused ? "▶ RESUME" : "⏸ PAUSE"}

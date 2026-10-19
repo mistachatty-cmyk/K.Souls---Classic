@@ -1,5 +1,5 @@
 ﻿import { ARENA_W, ARENA_H, SCOREBOARD_H, GRID_CELL_SIZE, BASE_PARTS } from "../game/constants";
-import type { GameState, ThemeMode, GameMode, OpponentMode, LokModifier, CameraMode, WeaponStyle, Environment, ViewMode, WeaponType, KineticType, SkinType, Character } from "../game/types";
+import type { GameState, ThemeMode, GameMode, OpponentMode, LokModifier, CameraMode, WeaponStyle, Environment, ViewMode, WeaponType, KineticType, SkinType, Character, KineticModelStyle } from "../game/types";
 import { drawWeapon, renderChar } from "./DrawEntities";
 
 // ─── THEME BACKGROUND DRAW ───────────────────────────────────────────────────
@@ -1422,6 +1422,14 @@ export const SETTINGS_DATA: {
   }
 ];
 
+export const KINETIC_MODEL_OPTIONS: { id: KineticModelStyle; label: string; detail: string }[] = [
+  { id: "block", label: "Block", detail: "Angular arena look" },
+  { id: "classic", label: "Classic", detail: "Original outlined look" },
+  { id: "hd", label: "V2 / HD", detail: "Refined detail · default" },
+  { id: "sabre", label: "V3 / Sabre", detail: "Sabre era look" },
+];
+export const KINETIC_MODEL_PICKER_HEIGHT = 166;
+
 
 /**
  * Draws the comprehensive Settings Menu.
@@ -1504,9 +1512,47 @@ export function drawSettingsMenu(
   ctx.save();
   ctx.beginPath(); ctx.rect(0, SCROLL_TOP, W, H - SCROLL_TOP); ctx.clip();
 
+  const pickerTop = SCROLL_TOP + 10 + scrollY;
+  const prefersReducedMotion = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const modelCardW = 210, modelCardH = 124, modelGap = 8;
+  const modelStartX = (W - (modelCardW * 4 + modelGap * 3)) / 2;
+  ctx.fillStyle = `${accentColor}1a`;
+  ctx.fillRect(modelStartX - 8, pickerTop, W - modelStartX * 2 + 16, 20);
+  ctx.fillStyle = accentColor; ctx.font = "bold 13px monospace"; ctx.textAlign = "left";
+  ctx.fillText("▸ FIGHTER MODEL", modelStartX, pickerTop + 14);
+  KINETIC_MODEL_OPTIONS.forEach((option, index) => {
+    const bx = modelStartX + index * (modelCardW + modelGap), by = pickerTop + 27;
+    if (by + modelCardH < SCROLL_TOP || by > H) return;
+    const selected = state.kineticStyle === option.id;
+    const hover = mouse.x >= bx && mouse.x <= bx + modelCardW && mouse.y >= by && mouse.y <= by + modelCardH;
+    ctx.fillStyle = selected ? cardActiveBg : hover ? "rgba(255,255,255,0.12)" : cardBg;
+    ctx.strokeStyle = selected ? cardActiveStroke : hover ? "#fff" : "rgba(255,255,255,0.18)";
+    ctx.lineWidth = selected ? 2 : 1;
+    ctx.beginPath(); ctx.roundRect(bx, by, modelCardW, modelCardH, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = selected ? cardActiveStroke : headerTextColor;
+    ctx.font = "bold 12px monospace"; ctx.textAlign = "center";
+    ctx.fillText(option.label, bx + modelCardW / 2, by + 19);
+    const previewScale = option.id === "block" ? 1.15 : 1.1;
+    const dummyChar: Character = {
+      id: -1, team: index % 2 === 0 ? 1 : 2, x: 0, y: 0, vx: 0, vy: 0,
+      angle: (prefersReducedMotion ? 0 : Math.sin(ts * 0.002 + index) * 0.18) - Math.PI / 2, angularV: 0,
+      hp: 1, maxHp: 1, flashFrames: 0, dead: false,
+      parts: BASE_PARTS.map((part) => ({ ...part, ox: part.ox * previewScale, oy: part.oy * previewScale, r: part.r * previewScale })),
+      trail: [], scale: previewScale, weapon: "none", kineticType: "standard", skin: "default",
+      stunTime: 0, cooldown: 0, shieldHp: 0, contacts: 0, mass: 1, customTimer: 0,
+      originalWeapon: "none", sabreTimer: 0, tossedTimer: 0,
+    };
+    ctx.save(); ctx.translate(bx + modelCardW / 2, by + 69);
+    renderChar(ctx, dummyChar, false, 1, state.theme, false, false, ts, option.id);
+    ctx.restore();
+    ctx.fillStyle = selected ? enabledTextColor : "rgba(255,255,255,0.58)";
+    ctx.font = "9px monospace"; ctx.textAlign = "center";
+    ctx.fillText(option.detail, bx + modelCardW / 2, by + 113);
+  });
+
   const cardW = 210, cardH = 50, gap = 8, cols = 4;
   const startX = (W - (cols * cardW + (cols - 1) * gap)) / 2;
-  let currentY = SCROLL_TOP + 16 + scrollY;
+  let currentY = SCROLL_TOP + 16 + scrollY + KINETIC_MODEL_PICKER_HEIGHT;
 
   SETTINGS_DATA.forEach(group => {
     ctx.fillStyle = `${accentColor}1a`;
@@ -1615,8 +1661,10 @@ export function drawGameOver(
     ctx.font = "14px monospace";
     ctx.fillText(`Peak Fighters: ${state.stats.maxChars}  |  Total Damage: ${Math.floor(state.stats.totalDmg)}`, W / 2, 360);
 
-    const hover = mouse.x >= W / 2 - 90 && mouse.x <= W / 2 + 90 && mouse.y >= 440 && mouse.y <= 488;
-    drawBtn(ctx, "MAIN MENU", W / 2 - 90, 440, 180, 48, hover, state.theme, false, true);
+    const rematchHover = mouse.x >= W / 2 - 190 && mouse.x <= W / 2 - 10 && mouse.y >= 440 && mouse.y <= 488;
+    const menuHover = mouse.x >= W / 2 + 10 && mouse.x <= W / 2 + 190 && mouse.y >= 440 && mouse.y <= 488;
+    drawBtn(ctx, "REMATCH", W / 2 - 190, 440, 180, 48, rematchHover, state.theme, false, true);
+    drawBtn(ctx, "MAIN MENU", W / 2 + 10, 440, 180, 48, menuHover, state.theme, false, true);
   } else {
     ctx.fillStyle = "rgba(0,0,0,0.82)";
     ctx.fillRect(0, 0, W, H);
@@ -1654,9 +1702,14 @@ export function drawGameOver(
     ctx.fillText("Max Fighters: " + state.stats.maxChars, W / 2, H / 2 + 100);
     ctx.fillText("Total Damage: " + Math.floor(state.stats.totalDmg), W / 2, H / 2 + 120);
 
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 16px monospace";
-    ctx.fillText("[ Press ENTER or click to return to menu ]", W / 2, H / 2 + 165);
+    const buttonY = H / 2 + 145;
+    const rematchHover = mouse.x >= W / 2 - 190 && mouse.x <= W / 2 - 10 && mouse.y >= buttonY && mouse.y <= buttonY + 48;
+    const menuHover = mouse.x >= W / 2 + 10 && mouse.x <= W / 2 + 190 && mouse.y >= buttonY && mouse.y <= buttonY + 48;
+    drawBtn(ctx, "REMATCH  [R]", W / 2 - 190, buttonY, 180, 48, rematchHover, state.theme, false, true);
+    drawBtn(ctx, "MAIN MENU", W / 2 + 10, buttonY, 180, 48, menuHover, state.theme, false, true);
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = "12px monospace";
+    ctx.fillText("Press R or ENTER to rematch · ESC to return to menu", W / 2, H / 2 + 215);
   }
 }
 

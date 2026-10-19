@@ -1,6 +1,6 @@
 import { MutableRefObject } from "react";
 import { GameState, ThemeMode, LokModifier, CameraMode, WeaponStyle, Environment, ViewMode, Character, Particle, Projectile, Sabre } from "../game/types";
-import { SETTINGS_DATA, LOK_MENU_DATA } from "../render/DrawUI";
+import { SETTINGS_DATA, LOK_MENU_DATA, KINETIC_MODEL_OPTIONS, KINETIC_MODEL_PICKER_HEIGHT } from "../render/DrawUI";
 import { ARENA_W, ARENA_H, SCOREBOARD_H } from "../game/constants";
 
 /**
@@ -49,6 +49,7 @@ export function setupInputListeners(
   refMenuDragY: MutableRefObject<number | null>,
   callbacks: InputCallbacks
 ) {
+  let modelRailTouchStart: { x: number; y: number } | null = null;
   /**
    * Handles end of drag interactions for God Actions
    * - Area Lock: Locks characters within selection rectangle + spawns corner explosion VFX
@@ -157,12 +158,13 @@ export function setupInputListeners(
     const touch = e.targetTouches[0];
     const tx = (touch.clientX - rect.left) * (canvas.width / rect.width);
     const ty = (touch.clientY - rect.top) * (canvas.height / rect.height);
+    modelRailTouchStart = screenRef.current === "settings_menu" ? { x: tx, y: ty } : null;
 
     // Handle menu clicks (non-game screens)
     if (screenRef.current !== "game" || stateRef.current.paused || !stateRef.current.running) {
       mouseRef.current.x = tx;
       mouseRef.current.y = ty;
-      handleClick(e as any);
+      if (["bestiary", "lok_menu", "settings_menu"].includes(screenRef.current)) refMenuDragY.current = ty;
       return;
     }
 
@@ -173,12 +175,40 @@ export function setupInputListeners(
     handleMouseDown({ clientX: touch.clientX, clientY: touch.clientY } as any);
   };
 
-  const handleTouchEnd = () => { handleMouseUp(); };
+  const handleTouchEnd = (e: TouchEvent) => {
+    let selectedBySwipe = false;
+    if (modelRailTouchStart && screenRef.current === "settings_menu") {
+      const endX = mouseRef.current.x;
+      const { x, y } = modelRailTouchStart;
+      if (y >= 97 + refMenuScroll.current && y <= 221 + refMenuScroll.current && Math.abs(endX - x) > 32) {
+        const styles = KINETIC_MODEL_OPTIONS.map((option) => option.id);
+        const current = Math.max(0, styles.indexOf(stateRef.current.kineticStyle));
+        const next = Math.max(0, Math.min(styles.length - 1, current + (endX < x ? 1 : -1)));
+        callbacks.updateConfig("kineticStyle", styles[next]);
+        callbacks.setTick((tick) => tick + 1);
+        selectedBySwipe = true;
+      }
+    }
+    if (!selectedBySwipe && screenRef.current !== "game") handleClick(e);
+    modelRailTouchStart = null;
+    handleMouseUp();
+  };
 
   const handleKeyDown = (e: KeyboardEvent) => {
     keysRef.current.add(e.key.toLowerCase());
     const screen = screenRef.current;
     const state = stateRef.current;
+
+    if (screen === "settings_menu" && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      const styles = KINETIC_MODEL_OPTIONS.map((option) => option.id);
+      const current = Math.max(0, styles.indexOf(state.kineticStyle));
+      const direction = e.key === "ArrowRight" ? 1 : -1;
+      const next = (current + direction + styles.length) % styles.length;
+      callbacks.updateConfig("kineticStyle", styles[next]);
+      callbacks.setTick((tick) => tick + 1);
+      e.preventDefault();
+      return;
+    }
 
     if (screen === "game" && state.camera === "focus") {
       if (e.key === "ArrowUp") { state.focusZoom = Math.min(state.focusZoom + 0.2, 5); callbacks.setTick(t=>t+1); }
@@ -193,6 +223,12 @@ export function setupInputListeners(
         }
         callbacks.setTick(t=>t+1);
       }
+    }
+
+    if (screen === "over" && (e.key === "Enter" || e.key.toLowerCase() === "r")) {
+      callbacks.startGame();
+      e.preventDefault();
+      return;
     }
 
     if (e.key.toLowerCase() === "a" && screen === "game") callbacks.spawnP1();
@@ -353,7 +389,17 @@ export function setupInputListeners(
       // Only process item clicks in the scrollable area (below header y=60)
       const SETTINGS_SCROLL_TOP = 60;
       if (my >= SETTINGS_SCROLL_TOP) {
-        let currentY = SETTINGS_SCROLL_TOP + 16 + refMenuScroll.current;
+        const pickerStartX = (W - (210 * 4 + 8 * 3)) / 2;
+        const pickerY = SETTINGS_SCROLL_TOP + 10 + refMenuScroll.current + 27;
+        for (let index = 0; index < KINETIC_MODEL_OPTIONS.length; index++) {
+          const bx = pickerStartX + index * 218;
+          if (mx >= bx && mx <= bx + 210 && my >= pickerY && my <= pickerY + 124) {
+            callbacks.updateConfig("kineticStyle", KINETIC_MODEL_OPTIONS[index].id);
+            callbacks.setTick((tick) => tick + 1);
+            return;
+          }
+        }
+        let currentY = SETTINGS_SCROLL_TOP + 16 + refMenuScroll.current + KINETIC_MODEL_PICKER_HEIGHT;
         const cardW = 210, cardH = 50, gap = 8, cols = 4;
         const startX = (W - (cols * cardW + (cols - 1) * gap)) / 2;
         let clicked = false;
@@ -404,9 +450,17 @@ export function setupInputListeners(
         screenRef.current = "menu"; callbacks.setTick(t => t + 1);
       }
     } else if (screen === "over") {
-      screenRef.current = "menu";
-      dataRef.chars.current = []; dataRef.parts.current = [];
-      callbacks.setTick(t => t + 1);
+      const buttonY = state.classicMenu ? 440 : H / 2 + 145;
+      const buttonW = 180, buttonH = 48;
+      const rematchX = W / 2 - 190;
+      if (mx >= rematchX && mx <= rematchX + buttonW && my >= buttonY && my <= buttonY + buttonH) {
+        callbacks.startGame();
+      } else {
+        // Preserve the existing click-anywhere-to-return behavior for the menu action.
+        screenRef.current = "menu";
+        dataRef.chars.current = []; dataRef.parts.current = [];
+        callbacks.setTick(t => t + 1);
+      }
     }
   };
 
@@ -423,8 +477,14 @@ export function setupInputListeners(
         if (e.targetTouches.length === 0) return;
         const rect = canvas.getBoundingClientRect();
         const my = (e.targetTouches[0].clientY - rect.top) * (canvas.height / rect.height);
-        const dy = my - refMenuDragY.current;
-        refMenuScroll.current = Math.min(0, Math.max(-800, refMenuScroll.current + dy));
+        const mx = (e.targetTouches[0].clientX - rect.left) * (canvas.width / rect.width);
+        const previousY = refMenuDragY.current;
+        mouseRef.current.x = mx;
+        mouseRef.current.y = my;
+        if (screenRef.current === "settings_menu" && modelRailTouchStart && Math.abs(mx - modelRailTouchStart.x) > Math.abs(my - modelRailTouchStart.y)) return;
+        const dy = my - previousY;
+        const maxScroll = screenRef.current === "settings_menu" ? -2400 : -800;
+        refMenuScroll.current = Math.min(0, Math.max(maxScroll, refMenuScroll.current + dy));
         refMenuDragY.current = my;
       }
     // Game screen movement tracking

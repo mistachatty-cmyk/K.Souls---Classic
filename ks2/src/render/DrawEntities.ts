@@ -1162,11 +1162,11 @@ export function drawHpBar(
     !devMode
   )
     return;
-  const barW = 36 * c.scale;
-  let barH = 5 * c.scale;
+  const barW = 44 * c.scale;
+  let barH = 6 * c.scale;
   if (style === "thick") barH = 8 * c.scale;
   
-  const py = c.y - CHAR_RADIUS * c.scale - (style === "thick" ? 22 : 18) * c.scale;
+  const py = c.y - CHAR_RADIUS * c.scale - (style === "thick" ? 24 : 20) * c.scale;
 
   ctx.fillStyle = theme === "comic" || theme === "paper_sketch" ? "#fff" : "rgba(10, 10, 15, 0.85)";
   ctx.beginPath();
