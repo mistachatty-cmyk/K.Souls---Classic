@@ -71,6 +71,7 @@ const getYouTubeId = (url: string) => {
 };
 
 const MODEL_SETTINGS_CHANNEL = "gsix.kinetic-souls.settings.v1";
+const TUTORIAL_SEEN_KEY = "kinetic-souls-2.tutorial-seen.v1";
 const TRUSTED_GSIX_ORIGINS = ["https://gsix.online", "https://www.gsix.online", "http://localhost:5173"];
 function getGsixParentOrigin(): string | null {
   if (typeof window === "undefined" || window.parent === window) return null;
@@ -129,7 +130,10 @@ export default function KineticSouls() {
   const [p2Skin, setP2Skin] = useState<SkinType>("default");
   const [currentSplash, setCurrentSplash] = useState(() => SPLASH_ARCHIVE[Math.floor(Math.random() * SPLASH_ARCHIVE.length)]);
   const [showMobileUI, setShowMobileUI] = useState(false);
-  const [showHowToPlay, setShowHowToPlay] = useState(false);
+  const [showHowToPlay, setShowHowToPlay] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try { return window.localStorage.getItem(TUTORIAL_SEEN_KEY) !== "1"; } catch { return false; }
+  });
   const [showTitleShop, setShowTitleShop] = useState(false);
   const [purchasedTitles, setPurchasedTitles] = useState<string[]>(["default"]);
   const [selectedTitle, setSelectedTitle] = useState<string>("default");
@@ -143,6 +147,10 @@ export default function KineticSouls() {
     y: number;
   } | null>(null);
   const [, setTick] = useState(0);
+  const dismissHowToPlay = useCallback(() => {
+    try { window.localStorage.setItem(TUTORIAL_SEEN_KEY, "1"); } catch { /* Keep the tutorial dismissible if storage is unavailable. */ }
+    setShowHowToPlay(false);
+  }, []);
   const [liveMenuWidth, setLiveMenuWidth] = useState(310);
   const [isResizingMenu, setIsResizingMenu] = useState(false);
   const joyRef = useRef({ active: false, startX: 0, startY: 0, dx: 0, dy: 0 });
@@ -210,11 +218,18 @@ export default function KineticSouls() {
   useEffect(() => {
     if (!showHowToPlay) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setShowHowToPlay(false);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        dismissHowToPlay();
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [showHowToPlay]);
+    window.addEventListener("keydown", closeOnEscape, true);
+    return () => window.removeEventListener("keydown", closeOnEscape, true);
+  }, [showHowToPlay, dismissHowToPlay]);
 
   // Attach the cache securely to the state reference so the drawing systems can access it
   useEffect(() => {
@@ -2729,7 +2744,7 @@ export default function KineticSouls() {
         <button
           type="button"
           onClick={() => setShowHowToPlay(true)}
-          style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 110, padding: "8px 14px", background: "rgba(12,12,24,0.9)", color: "#fff", border: "1px solid rgba(255,255,255,0.35)", borderRadius: 4, fontFamily: "monospace", fontWeight: "bold", fontSize: 11, cursor: "pointer" }}
+          style={{ position: "absolute", top: 54, left: "50%", transform: "translateX(-50%)", zIndex: 110, padding: "8px 14px", background: "rgba(12,12,24,0.9)", color: "#fff", border: "1px solid rgba(255,255,255,0.35)", borderRadius: 4, fontFamily: "monospace", fontWeight: "bold", fontSize: 11, cursor: "pointer" }}
         >
           HOW TO PLAY
         </button>
@@ -2737,7 +2752,7 @@ export default function KineticSouls() {
 
       {showHowToPlay && (
         <div role="dialog" aria-modal="true" aria-labelledby="kinetic-tutorial-title" style={{ position: "fixed", inset: 0, zIndex: 1000, display: "grid", placeItems: "center", padding: 16, background: "rgba(0,0,0,0.78)" }}>
-          <section style={{ width: "min(520px, 100%)", boxSizing: "border-box", padding: 24, background: "#10101c", border: "1px solid #8c76d9", color: "#f5f3ff", fontFamily: "monospace", boxShadow: "0 16px 48px rgba(0,0,0,0.55)" }}>
+          <section style={{ width: "min(520px, 100%)", maxHeight: "calc(100dvh - 32px)", overflowY: "auto", boxSizing: "border-box", padding: 24, background: "#10101c", border: "1px solid #8c76d9", color: "#f5f3ff", fontFamily: "monospace", boxShadow: "0 16px 48px rgba(0,0,0,0.55)" }}>
             <p style={{ margin: "0 0 6px", color: "#b6a1ff", fontSize: 11, letterSpacing: 2 }}>QUICK START</p>
             <h2 id="kinetic-tutorial-title" style={{ margin: "0 0 18px", fontSize: 24 }}>How to play</h2>
             <ol style={{ margin: 0, paddingLeft: 22, color: "#d4d0e5", lineHeight: 1.7, fontSize: 14 }}>
@@ -2747,8 +2762,8 @@ export default function KineticSouls() {
               <li>Open Settings to pick a fighter look. <strong>V2 / HD</strong> is the default; your choice applies to every fighter.</li>
             </ol>
             <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end", flexWrap: "wrap" }}>
-              <button type="button" autoFocus onClick={() => setShowHowToPlay(false)} style={{ padding: "10px 14px", background: "transparent", color: "#d4d0e5", border: "1px solid #514d66", cursor: "pointer", fontFamily: "monospace" }}>CLOSE</button>
-              <button type="button" onClick={() => { setShowHowToPlay(false); startGame(); }} style={{ padding: "10px 14px", background: "#5947a4", color: "#fff", border: "1px solid #9a86f0", cursor: "pointer", fontFamily: "monospace", fontWeight: "bold" }}>START MATCH</button>
+              <button type="button" autoFocus onClick={dismissHowToPlay} style={{ padding: "10px 14px", background: "transparent", color: "#d4d0e5", border: "1px solid #514d66", cursor: "pointer", fontFamily: "monospace" }}>CLOSE</button>
+              <button type="button" onClick={() => { dismissHowToPlay(); startGame(); }} style={{ padding: "10px 14px", background: "#5947a4", color: "#fff", border: "1px solid #9a86f0", cursor: "pointer", fontFamily: "monospace", fontWeight: "bold" }}>START MATCH</button>
             </div>
           </section>
         </div>
