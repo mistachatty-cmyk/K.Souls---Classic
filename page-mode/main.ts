@@ -19,11 +19,18 @@ type Options = { variant?: Variant };
 type Settings = { npcSide: 0 | Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean };
 
 const settings: Settings = { npcSide: 2, motion: "battle", modifier: "none", environment: "bouncy", theme: "synthwave", weapon: "roulette", speed: 1, spawnMs: 2200, displayHp: true, fighter: "standard", npcEnabled: true };
-const classicThemes = ["classic", "neon", "gameboy", "abyss", "runesite", "runesite_ultimate", "gsix", "gilded", "lokmod", "hacker", "synthwave", "vampire", "oceanic", "infernal", "glitch", "monochrome", "celestial", "overdrive", "comic", "neon_abyss", "rgb_cycle", "glassmorphism", "wireframe_matrix", "celestial_forge", "blood_moon", "neon_overdrive", "paper_sketch"];
-const ks2Themes = [...classicThemes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "liminal", "nebula", "matrix_reloaded", "stellar_drift", "neon_pulse", "obsidian_shard", "retro_wave", "pixel_dream"];
-const modifiers = ["none", "sudden_death", "shrinking_arena", "titans", "vampire_kiss", "necromancy", "magnet", "repel", "lok_bounty", "gravity_well", "time_distortion", "chaos_vortex"];
-const environments = ["none", "ice", "blackhole", "lava", "storm", "bouncy", "wrap", "blackout"];
-const weapons = ["standard", "roulette", "melee_mash", "ranged_test", "none"];
+const classicThemes = ["classic", "neon", "gameboy", "abyss", "runesite", "gsix", "gilded", "synthwave", "vampire", "oceanic", "infernal", "glitch", "monochrome", "celestial", "overdrive", "comic", "hacker", "rgb_cycle", "neon_abyss", "glassmorphism", "wireframe_matrix", "celestial_forge", "blood_moon", "neon_overdrive", "paper_sketch"];
+const ks2Themes = ["classic", "runesite", "gsix", "neon", "gameboy", "runesite_ultimate", "gilded", "lokmod", "glitch", "rgb_cycle", "comic", "neon_abyss", "cyberpunk", "ethereal", "wasteland", "monochrome", "void", "celestial", "overdrive", "abyss", "hacker", "synthwave", "vampire", "oceanic", "infernal", "glassmorphism", "wireframe_matrix", "celestial_forge", "blood_moon", "neon_overdrive", "paper_sketch", "outrun", "frostbite", "solaris", "deepsea", "liminal", "nebula"];
+const classicNativeModifiers = ["none", "sudden_death", "titans", "shrinking_arena", "vampire_kiss", "necromancy", "magnet", "repel", "lok_bounty"];
+const ks2NativeModifiers = ["none", "sudden_death", "titans", "shrinking_arena", "vampire_kiss", "necromancy", "magnet", "repel", "lok_bounty"];
+const pageOnlyModifiers = ["gravity_well", "time_distortion", "chaos_vortex"];
+const classicModifiers = [...classicNativeModifiers, ...pageOnlyModifiers];
+const ks2Modifiers = [...ks2NativeModifiers, ...pageOnlyModifiers];
+const pageOnlyModifierSet = new Set(pageOnlyModifiers);
+const ks2PageEnvironmentSet = new Set(["solar_flares", "magnetic_fields", "void_storm"]);
+const classicEnvironments = ["none", "ice", "blackhole", "lava", "storm", "bouncy", "wrap", "blackout"];
+const ks2Environments = [...classicEnvironments, "solar_flares", "magnetic_fields", "void_storm"];
+const weapons = ["standard", "roulette", "melee_mash", "ranged_test"];
 const HOLD_REPEAT_MS = 150;
 
 let game: PageBattle | null = null;
@@ -395,6 +402,18 @@ class PageBattle {
       if (settings.environment === "blackhole") { fighter.vx += (scrollX + innerWidth / 2 - fighter.x) * 0.0001; fighter.vy += (scrollY + innerHeight / 2 - fighter.y) * 0.0001; }
       if (settings.environment === "ice") { fighter.vx *= 1.002; fighter.vy *= 1.002; }
       if (settings.environment === "storm") { fighter.vx += Math.sin(now * 0.001 + fighter.y * 0.009) * 0.16 * dt; fighter.vy += Math.cos(now * 0.0013 + fighter.x * 0.006) * 0.08 * dt; }
+      if (this.variant === "ks2" && settings.environment === "solar_flares") {
+        const flareX = scrollX + innerWidth * (0.5 + Math.sin(now * 0.0005) * 0.5), flareY = scrollY + innerHeight * (0.5 + Math.cos(now * 0.0007) * 0.5);
+        if (Math.hypot(fighter.x - flareX, fighter.y - flareY) < 100) { fighter.hp -= 0.1 * dt; fighter.flashFrames = Math.max(fighter.flashFrames, 1); }
+      }
+      if (this.variant === "ks2" && settings.environment === "magnetic_fields") {
+        fighter.vx += Math.sin(now * 0.001 + fighter.y * 0.01) * 0.5 * dt;
+        fighter.vy += Math.cos(now * 0.001 + fighter.x * 0.01) * 0.5 * dt;
+      }
+      if (this.variant === "ks2" && settings.environment === "void_storm") {
+        fighter.hp = Math.max(1, fighter.hp - 0.04 * dt);
+        const stormDrag = Math.pow(1.01, dt); fighter.vx *= stormDrag; fighter.vy *= stormDrag;
+      }
       if (settings.environment === "lava" && fighter.y >= maxY - 52) {
         fighter.hp -= 0.45 * dt; fighter.flashFrames = Math.max(fighter.flashFrames, 1);
         if (fighter.hp <= 0) this.awardKo(fighter, fighter.team === 1 ? 2 : fighter.team === 2 ? 1 : 0);
@@ -929,6 +948,17 @@ class PageBattle {
     const cool = this.variant === "classic" ? "255,196,100" : "84,229,255";
     const pulse = 0.5 + Math.sin(time * 0.0022) * 0.5;
     if (settings.environment === "blackout") { ctx.fillStyle = "rgba(4,3,12,.82)"; ctx.fillRect(0, 0, w, h); }
+    if (this.variant === "ks2" && settings.environment === "void_storm") { ctx.fillStyle = `rgba(18,0,48,${0.12 + pulse * 0.1})`; ctx.fillRect(0, 0, w, h); }
+    if (this.variant === "ks2" && settings.environment === "solar_flares") {
+      const x = w * (0.5 + Math.sin(time * 0.0005) * 0.5), y = h * (0.5 + Math.cos(time * 0.0007) * 0.5);
+      const flare = ctx.createRadialGradient(x, y, 3, x, y, 105); flare.addColorStop(0, "rgba(255,244,159,.85)"); flare.addColorStop(0.2, "rgba(255,132,45,.42)"); flare.addColorStop(1, "rgba(255,80,28,0)");
+      ctx.fillStyle = flare; ctx.fillRect(x - 105, y - 105, 210, 210);
+    }
+    if (this.variant === "ks2" && settings.environment === "magnetic_fields") {
+      ctx.save(); ctx.globalAlpha = 0.22 + pulse * 0.08; ctx.strokeStyle = "#73caff"; ctx.lineWidth = 1;
+      for (let i = 0; i < 8; i++) { const y = (time * 0.05 + i * 28) % h; ctx.beginPath(); ctx.moveTo(0, y); ctx.bezierCurveTo(w * 0.25, y - 18, w * 0.75, y + 18, w, y); ctx.stroke(); }
+      ctx.restore();
+    }
     const glow = ctx.createRadialGradient(w * 0.52, h * 0.48, 4, w * 0.52, h * 0.48, Math.max(w, h) * 0.8);
     glow.addColorStop(0, `rgba(${hot},${0.14 + pulse * 0.08})`);
     glow.addColorStop(0.58, `rgba(${hot},0.035)`);
@@ -970,8 +1000,12 @@ class PageBattle {
     if (name === "close" || (this.panel.dataset.open === "true" && this.panel.dataset.view === name)) { this.panel.dataset.open = "false"; return; }
     if (name === "creator" && this.panel.dataset.view === "creator" && this.panel.dataset.open === "true") { this.panel.dataset.minimized = this.panel.dataset.minimized === "true" ? "false" : "true"; return; }
     this.panel.dataset.view = name; this.panel.dataset.open = "true"; this.panel.dataset.minimized = "false";
-    const optionLabel = (option: string) => ({ none: "None", sudden_death: "Sudden Death", shrinking_arena: "Shrinking Arena", lok_bounty: "LoK Bounty", titans: "Titans", vampire_kiss: "Vampire's Kiss", time_distortion: "Time Distortion", chaos_vortex: "Chaos Vortex", gravity_well: "Gravity Well", melee_mash: "Melee Mash", ranged_test: "Ranged Test", blackhole: "Black Hole", gameboy: "Game Boy", paper_sketch: "Paper Sketch", wireframe_matrix: "Wireframe Matrix", blood_moon: "Blood Moon", runesite_ultimate: "Runesite Ultimate", neon_abyss: "Neon Abyss", rgb_cycle: "RGB Cycle", glassmorphism: "Glassmorphism", celestial_forge: "Celestial Forge", neon_overdrive: "Neon Overdrive", matrix_reloaded: "Matrix Reloaded", stellar_drift: "Stellar Drift", neon_pulse: "Neon Pulse", obsidian_shard: "Obsidian Shard", retro_wave: "Retro Wave", pixel_dream: "Pixel Dream", lava: "Lava Floor", storm: "Storm", blackout: "Blackout" } as Record<string, string>)[option] || option.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
-    const select = (label: string, key: keyof Settings, options: string[]) => `<label>${label}<select data-setting="${key}">${options.map(option => `<option value="${option}" ${settings[key] === option ? "selected" : ""}>${optionLabel(option)}</option>`).join("")}</select></label>`;
+    const optionLabel = (option: string, key: keyof Settings) => {
+      const label = ({ none: "None", sudden_death: "Sudden Death", shrinking_arena: "Shrinking Arena", lok_bounty: "LoK Bounty", titans: "Titans", vampire_kiss: "Vampire's Kiss", time_distortion: "Time Distortion", chaos_vortex: "Chaos Vortex", gravity_well: "Gravity Well", melee_mash: "Melee Mash", ranged_test: "Ranged Test", blackhole: "Black Hole", gameboy: "Game Boy", paper_sketch: "Paper Sketch", wireframe_matrix: "Wireframe Matrix", blood_moon: "Blood Moon", runesite_ultimate: "Runesite Ultimate", neon_abyss: "Neon Abyss", rgb_cycle: "RGB Cycle", glassmorphism: "Glassmorphism", celestial_forge: "Celestial Forge", neon_overdrive: "Neon Overdrive", matrix_reloaded: "Matrix Reloaded", stellar_drift: "Stellar Drift", neon_pulse: "Neon Pulse", obsidian_shard: "Obsidian Shard", retro_wave: "Retro Wave", pixel_dream: "Pixel Dream", lava: "Lava Floor", storm: "Storm", blackout: "Blackout" } as Record<string, string>)[option] || option.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
+      const pageAdapted = pageOnlyModifierSet.has(option) || (key === "environment" && this.variant === "ks2" && ks2PageEnvironmentSet.has(option));
+      return pageAdapted ? `${label} · PAGE MODE` : label;
+    };
+    const select = (label: string, key: keyof Settings, options: string[]) => `<label>${label}<select data-setting="${key}">${options.map(option => `<option value="${option}" ${settings[key] === option ? "selected" : ""}>${optionLabel(option, key)}</option>`).join("")}</select></label>`;
     const npc = `<label>Right-side NPC<input data-setting="npcEnabled" type="checkbox" ${settings.npcEnabled ? "checked" : ""}></label>`;
     if (name === "creator") {
       this.panel.innerHTML = `<div data-creator-head><h2>Creative Sandbox · Live Match</h2><button data-minimize>Minimize</button></div><p class="notice">These objects share the live match physics. Fighters collide with and break them; the page underneath is restored when you leave.</p><section><strong>Starter scenes</strong><div class="controls"><button data-scene="neon">Neon tiles</button><button data-scene="ruins">Rift ruins</button><button data-scene="garden">Sky garden</button></div></section><section><label>Add image or video<input data-upload type="file" accept="image/*,video/mp4,video/webm,video/ogg"></label></section><section><label>Match replay · scrub while paused<input data-timeline type="range" min="0" max="${Math.max(0, this.snapshots.length - 1)}" value="${this.replayIndex ?? Math.max(0, this.snapshots.length - 1)}"></label><small data-replay-time>${Math.ceil((this.snapshots[this.replayIndex ?? Math.max(0, this.snapshots.length - 1)]?.at || 0) / 1000)}s</small><label>Video playback position<input data-video-timeline type="range" min="0" max="0" value="0"></label></section><section class="controls"><button data-rebuild>Rebuild scene</button><button data-save>Save scene</button><button data-open-scene>Open latest scene</button><button data-export>Export arena still</button><button data-record>Record 8-second replay</button></section><p class="notice" data-creator-status role="status">Local media and scenes stay on this device. Drag props to place them. Video stays muted.</p>`;
@@ -990,7 +1024,10 @@ class PageBattle {
       this.panel.innerHTML = `<h2>${this.variant === "classic" ? "Classic" : "KS2"} Bestiary</h2><p class="notice">Choose a fighter for the next spawn.</p>${select("Spawn fighter", "fighter", entries.filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<div>${entries.map(e => `<div class="entry"><strong style="color:${e.color}">${e.name}</strong><small>${e.role} · HP ${e.hp} · ${e.weapon}</small><div>${e.lore}</div></div>`).join("")}</div>`;
     } else if (name === "modifiers") {
       const themeChoices = this.variant === "classic" ? classicThemes : ks2Themes;
-      this.panel.innerHTML = `<h2>LoK Game Modifiers · M</h2><p class="notice">Kinetic Souls combat, environment, weapon, theme, and fighter controls. These settings change the live page match. Options that require the standalone arena stay linked there.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifiers)}${select("Environment", "environment", environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", themeChoices)}${select("Spawn fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
+      const modifierChoices = this.variant === "classic" ? classicModifiers : ks2Modifiers;
+      const environmentChoices = this.variant === "classic" ? classicEnvironments : ks2Environments;
+      const modeNote = this.variant === "classic" ? "The Classic catalog is preserved; Gravity Well, Time Distortion, and Chaos Vortex are clearly labeled page-mode adaptations." : "The KS2 theme menu and arena environment controls match the live game; solar flares, magnetic fields, void storm, and three extra force modifiers are labeled page-mode adaptations.";
+      this.panel.innerHTML = `<h2>LoK Game Modifiers · M</h2><p class="notice">${modeNote} Fighter data comes from this version's Bestiary. Full-arena-only controls stay linked to the standalone game.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifierChoices)}${select("Environment", "environment", environmentChoices)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", themeChoices)}${select("Spawn fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
     } else {
       this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC on right</button><p class="notice">Tap A/L or a team control to launch one fighter. Hold either to keep launching; right-side input takes over Player 2 for 12 seconds.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
     }
