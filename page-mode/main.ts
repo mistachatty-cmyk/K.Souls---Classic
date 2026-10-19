@@ -8,6 +8,7 @@ import type { Character as Ks2Character, Drop, GameState, Particle } from "../ks
 import { mapPageTeamScores, playerOneSide } from "./team-sides.mjs";
 import { classifyPageMaterial, materialDamage, materialDurability, materialStageLabel, type PageMaterial } from "./materials.mjs";
 import { impactImpulse, normalizeImpactDirection } from "./impact-physics.mjs";
+import { pageEffects } from "./effects.mjs";
 
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
@@ -19,9 +20,9 @@ type FloatingText = { x: number; y: number; value: string; color: string; life: 
 type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number };
 type Shockwave = { x: number; y: number; radius: number; maxRadius: number; life: number; maxLife: number; color: string; width: number };
 type Options = { variant?: Variant };
-type Settings = { npcSide: Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; matchDurationMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean };
+type Settings = { npcSide: Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; matchDurationMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean; effectMode: "full" | "low" };
 
-const settings: Settings = { npcSide: 2, motion: "battle", modifier: "none", environment: "bouncy", theme: "synthwave", weapon: "roulette", speed: 1, spawnMs: 2200, matchDurationMs: 120_000, displayHp: true, fighter: "standard", npcEnabled: true };
+const settings: Settings = { npcSide: 2, motion: "battle", modifier: "none", environment: "bouncy", theme: "synthwave", weapon: "roulette", speed: 1, spawnMs: 2200, matchDurationMs: 120_000, displayHp: true, fighter: "standard", npcEnabled: true, effectMode: "full" };
 const classicThemes = ["classic", "neon", "gameboy", "abyss", "runesite", "gsix", "gilded", "synthwave", "vampire", "oceanic", "infernal", "glitch", "monochrome", "celestial", "overdrive", "comic", "hacker", "rgb_cycle", "neon_abyss", "glassmorphism", "wireframe_matrix", "celestial_forge", "blood_moon", "neon_overdrive", "paper_sketch"];
 const ks2Themes = ["classic", "runesite", "gsix", "neon", "gameboy", "runesite_ultimate", "gilded", "lokmod", "glitch", "rgb_cycle", "comic", "neon_abyss", "cyberpunk", "ethereal", "wasteland", "monochrome", "void", "celestial", "overdrive", "abyss", "hacker", "synthwave", "vampire", "oceanic", "infernal", "glassmorphism", "wireframe_matrix", "celestial_forge", "blood_moon", "neon_overdrive", "paper_sketch", "outrun", "frostbite", "solaris", "deepsea", "liminal", "nebula"];
 const classicNativeModifiers = ["none", "sudden_death", "titans", "shrinking_arena", "vampire_kiss", "necromancy", "magnet", "repel", "lok_bounty"];
@@ -317,6 +318,8 @@ class PageBattle {
 
   elapsedMatchMs() { return Math.max(0, this.matchDurationMs - this.remainingMs); }
 
+  visualEffects() { return pageEffects(settings.effectMode, matchMedia("(prefers-reduced-motion: reduce)").matches); }
+
   awardKo(fighter: Fighter, team: number) {
     if (fighter.dead) return;
     fighter.dead = true; this.kills++;
@@ -327,7 +330,8 @@ class PageBattle {
     const name = String(fighter.kineticType || "kinetic").replaceAll("_", " ").toUpperCase();
     this.floatingTexts.push({ x: fighter.x, y: fighter.y - 24, value: fighter.kineticType === "bounty" ? "BOUNTY CLAIMED!" : team === 5 ? "UNDEAD K.O." : `${name} K.O.`, color: fighter.kineticType === "bounty" ? "#ffd700" : color, life: 1050 });
     this.screenShake = Math.max(this.screenShake, 3.5);
-    for (let i = 0; i < 14 && this.particles.length < 350; i++) {
+    const particleCount = Math.max(1, Math.round(14 * this.visualEffects().particles));
+    for (let i = 0; i < particleCount && this.particles.length < 350; i++) {
       const angle = Math.random() * Math.PI * 2, speed = 2 + Math.random() * 5;
       this.particles.push({ x: fighter.x, y: fighter.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 420 + Math.random() * 380, maxLife: 800, size: 2 + Math.random() * 4, color, active: true });
     }
@@ -772,7 +776,7 @@ class PageBattle {
       this.floatingTexts.push({ x, y: y - 28, value: target.boss ? `WARDEN PHASE ${stage}` : materialStageLabel(target.material, stage), color: target.boss ? "#ffe681" : color, life: 850 });
       this.screenShake = Math.max(this.screenShake, 2 + stage * 1.1);
     }
-    const count = Math.min(9, Math.max(3, Math.round(amount * 1.6)));
+    const count = Math.max(1, Math.round(Math.min(9, Math.max(3, Math.round(amount * 1.6))) * this.visualEffects().particles));
     for (let i = 0; i < count && this.particles.length < 350; i++) {
       const angle = Math.random() * Math.PI * 2, speed = Math.min(9, 2 + force * 0.18 + Math.random() * 3);
       this.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 1.5, life: 380 + Math.random() * 320, maxLife: 700, size: 2 + Math.random() * 4, color, active: true });
@@ -846,7 +850,7 @@ class PageBattle {
   breakIntoShards(target: Target, x: number, y: number, force: number, combo = 1) {
     const style = getComputedStyle(target.element);
     const color = style.backgroundColor !== "rgba(0, 0, 0, 0)" ? style.backgroundColor : style.color;
-    const count = Math.min(38, Math.max(12, Math.round(Math.sqrt(target.width * target.height) / 11) + combo * 2));
+    const count = Math.max(1, Math.round(Math.min(38, Math.max(12, Math.round(Math.sqrt(target.width * target.height) / 11) + combo * 2)) * this.visualEffects().particles));
     for (let i = 0; i < count && this.shards.length < 180; i++) {
       const angle = (Math.PI * 2 * i / count) + (Math.random() - 0.5) * 0.55;
       const speed = 3 + Math.random() * 5 + Math.min(7, force * 0.15) + Math.min(3, combo * 0.35);
@@ -859,6 +863,7 @@ class PageBattle {
   }
 
   draw(now: number) {
+    const effects = this.visualEffects();
     const ctx = this.ctx; ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     if (this.damage.length) {
       ctx.save(); ctx.beginPath();
@@ -874,14 +879,15 @@ class PageBattle {
         ctx.arc(x, y, r, 0, Math.PI * 2);
       }
       ctx.clip();
-      const sceneTime = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : now;
+      const sceneTime = effects.animated ? now : 0;
       if (this.variant === "classic") backgroundClassic(ctx, settings.theme as never, sceneTime, innerWidth, innerHeight, 0);
       else backgroundKs2(ctx, settings.theme as never, sceneTime, innerWidth, innerHeight, 0);
       this.drawArenaEnhancements(ctx, sceneTime);
       ctx.restore();
     }
     ctx.save();
-    const shakeX = Math.sin(now * 0.083) * this.screenShake, shakeY = Math.cos(now * 0.071) * this.screenShake * 0.55;
+    const visualShake = this.screenShake * effects.shake;
+    const shakeX = Math.sin(now * 0.083) * visualShake, shakeY = Math.cos(now * 0.071) * visualShake * 0.55;
     ctx.translate(shakeX, shakeY); ctx.translate(-scrollX, -scrollY);
     if (settings.environment === "lava") {
       const floorY = Math.max(innerHeight, document.documentElement.scrollHeight) - 18;
@@ -902,9 +908,8 @@ class PageBattle {
       if (!bomb.active || bomb.x < scrollX - 160 || bomb.x > scrollX + innerWidth + 160 || bomb.y < scrollY - 160 || bomb.y > scrollY + innerHeight + 160) continue;
       ctx.strokeStyle = "#b177ff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bomb.x, bomb.y, Math.min(bomb.radius, 18 + (3000 - bomb.timer) * 0.025), 0, Math.PI * 2); ctx.stroke();
     }
-    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
     for (const wave of this.shockwaves) {
-      if (reducedMotion) continue;
+      if (!effects.animated) continue;
       if (wave.x < scrollX - wave.maxRadius || wave.x > scrollX + innerWidth + wave.maxRadius || wave.y < scrollY - wave.maxRadius || wave.y > scrollY + innerHeight + wave.maxRadius) continue;
       const progress = 1 - wave.life / wave.maxLife;
       ctx.save(); ctx.globalAlpha = Math.max(0, 1 - progress) * 0.85; ctx.strokeStyle = wave.color;
@@ -918,7 +923,7 @@ class PageBattle {
       ctx.fillStyle = shot.color; ctx.beginPath(); ctx.arc(shot.x, shot.y, shot.type === "fireball" ? 7 : 4, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
     }
     for (const particle of this.particles) {
-      if (!particle.active || particle.x < scrollX || particle.x > scrollX + innerWidth || particle.y < scrollY || particle.y > scrollY + innerHeight) continue;
+      if (!effects.animated || !particle.active || particle.x < scrollX || particle.x > scrollX + innerWidth || particle.y < scrollY || particle.y > scrollY + innerHeight) continue;
       ctx.globalAlpha = Math.max(0, Math.min(1, particle.life / Math.max(1, particle.maxLife)));
       ctx.fillStyle = particle.color; ctx.fillRect(particle.x, particle.y, particle.size, particle.size);
     }
@@ -962,7 +967,7 @@ class PageBattle {
       }
       if (target.boss) {
         if (target.damage === 0) ctx.globalAlpha = 0.75;
-        const pulse = 0.5 + Math.sin(now * 0.006) * 0.5;
+        const pulse = effects.animated ? 0.5 + Math.sin(now * 0.006) * 0.5 : 0.5;
         const radius = Math.max(target.width, target.height) * (0.7 + pulse * 0.22);
         ctx.strokeStyle = `rgba(255,230,129,${0.45 + pulse * 0.45})`; ctx.lineWidth = 3; ctx.setLineDash([8, 7]);
         ctx.beginPath(); ctx.ellipse(target.x + target.width / 2, target.y + target.height / 2, radius * 0.62, radius * 0.42, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
@@ -976,16 +981,16 @@ class PageBattle {
     for (const fighter of this.fighters) {
       if (fighter.x < scrollX - 100 || fighter.x > scrollX + innerWidth + 100 || fighter.y < scrollY - 100 || fighter.y > scrollY + innerHeight + 100) continue;
       if (this.variant === "classic") {
-        renderClassic(ctx, fighter as ReturnType<typeof spawnClassic>, fighter.flashFrames > 0, 1, settings.theme as never, false, true, now);
+        renderClassic(ctx, fighter as ReturnType<typeof spawnClassic>, effects.animated && fighter.flashFrames > 0, 1, settings.theme as never, false, true, now);
         if (settings.displayHp) hpClassic(ctx, fighter as ReturnType<typeof spawnClassic>, settings.modifier as never, false, settings.theme as never);
       } else {
-        renderKs2(ctx, fighter as ReturnType<typeof spawnKs2>, fighter.flashFrames > 0, 1, settings.theme as never, false, true, now);
+        renderKs2(ctx, fighter as ReturnType<typeof spawnKs2>, effects.animated && fighter.flashFrames > 0, 1, settings.theme as never, false, true, now);
         if (settings.displayHp) hpKs2(ctx, fighter as ReturnType<typeof spawnKs2>, settings.modifier as never, false, settings.theme as never);
       }
     }
     for (const state of restore) { state.fighter.x = state.x; state.fighter.y = state.y; state.fighter.angle = state.angle; }
     for (const shard of this.shards) {
-      if (shard.x < scrollX - 30 || shard.x > scrollX + innerWidth + 30 || shard.y < scrollY - 30 || shard.y > scrollY + innerHeight + 30) continue;
+      if (!effects.animated || shard.x < scrollX - 30 || shard.x > scrollX + innerWidth + 30 || shard.y < scrollY - 30 || shard.y > scrollY + innerHeight + 30) continue;
       ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, shard.life / shard.maxLife)); ctx.translate(shard.x, shard.y); ctx.rotate(shard.angle);
       ctx.fillStyle = shard.color; ctx.fillRect(-shard.width / 2, -shard.height / 2, shard.width, shard.height);
       ctx.strokeStyle = this.variant === "classic" ? "#ffb14e" : "#bb91ff"; ctx.lineWidth = 1; ctx.strokeRect(-shard.width / 2, -shard.height / 2, shard.width, shard.height);
@@ -1000,7 +1005,7 @@ class PageBattle {
     const w = innerWidth, h = innerHeight;
     const hot = this.variant === "classic" ? "255,92,48" : "157,105,255";
     const cool = this.variant === "classic" ? "255,196,100" : "84,229,255";
-    const pulse = 0.5 + Math.sin(time * 0.0022) * 0.5;
+    const pulse = this.visualEffects().animated ? 0.5 + Math.sin(time * 0.0022) * 0.5 : 0.5;
     if (settings.environment === "blackout") { ctx.fillStyle = "rgba(4,3,12,.82)"; ctx.fillRect(0, 0, w, h); }
     if (this.variant === "ks2" && settings.environment === "void_storm") { ctx.fillStyle = `rgba(18,0,48,${0.12 + pulse * 0.1})`; ctx.fillRect(0, 0, w, h); }
     if (this.variant === "ks2" && settings.environment === "solar_flares") {
@@ -1085,7 +1090,7 @@ class PageBattle {
       const modeNote = this.variant === "classic" ? "The Classic catalog is preserved; Gravity Well, Time Distortion, and Chaos Vortex are clearly labeled page-mode adaptations." : "The KS2 theme menu and arena environment controls match the live game; solar flares, magnetic fields, void storm, and three extra force modifiers are labeled page-mode adaptations.";
       this.panel.innerHTML = `<h2>LoK Game Modifiers · M</h2><p class="notice">${modeNote} Fighter data comes from this version's Bestiary. Full-arena-only controls stay linked to the standalone game.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifierChoices)}${select("Environment", "environment", environmentChoices)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", themeChoices)}${select("Spawn fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
     } else {
-      this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC</button><p class="notice">Tap A/L or a team control to launch. Hold to keep launching; pressing the NPC side takes control for 12 seconds.</p>${select("NPC side · next match", "npcSide", pageSides)}<p class="notice">Player 1 launches from the opposite side. This change applies next match.</p>${select("Match duration", "matchDurationMs", matchDurations)}<p class="notice">The selected length applies to your next match. This match continues with its current timer.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
+      this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC</button><p class="notice">Tap A/L or a team control to launch. Hold to keep launching; pressing the NPC side takes control for 12 seconds.</p>${select("NPC side · next match", "npcSide", pageSides)}<p class="notice">Player 1 launches from the opposite side. This change applies next match.</p>${select("Match duration", "matchDurationMs", matchDurations)}<p class="notice">The selected length applies to your next match. This match continues with its current timer.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label>${select("Visual effects", "effectMode", ["full", "low"])}<p class="notice">Low reduces particles and screen shake. Reduced Motion disables shake and animated debris automatically.</p><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
     }
     if (name === "settings") this.updateNpcButton();
     this.panel.querySelectorAll("[data-setting]").forEach(input => input.addEventListener("change", event => {
