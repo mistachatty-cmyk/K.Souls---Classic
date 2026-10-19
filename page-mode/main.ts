@@ -19,9 +19,10 @@ type Options = { variant?: Variant };
 type Settings = { npcSide: 0 | Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean };
 
 const settings: Settings = { npcSide: 2, motion: "battle", modifier: "none", environment: "bouncy", theme: "synthwave", weapon: "roulette", speed: 1, spawnMs: 2200, displayHp: true, fighter: "standard", npcEnabled: true };
-const themes = ["classic", "neon", "gameboy", "abyss", "gsix", "gilded", "hacker", "synthwave", "vampire", "oceanic", "infernal", "glitch", "monochrome", "celestial", "overdrive", "comic", "wireframe_matrix", "blood_moon", "paper_sketch"];
-const modifiers = ["none", "sudden_death", "titans", "vampire_kiss", "necromancy", "magnet", "repel", "gravity_well", "time_distortion", "chaos_vortex"];
-const environments = ["none", "ice", "blackhole", "bouncy", "wrap"];
+const classicThemes = ["classic", "neon", "gameboy", "abyss", "runesite", "runesite_ultimate", "gsix", "gilded", "lokmod", "hacker", "synthwave", "vampire", "oceanic", "infernal", "glitch", "monochrome", "celestial", "overdrive", "comic", "neon_abyss", "rgb_cycle", "glassmorphism", "wireframe_matrix", "celestial_forge", "blood_moon", "neon_overdrive", "paper_sketch"];
+const ks2Themes = [...classicThemes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "liminal", "nebula", "matrix_reloaded", "stellar_drift", "neon_pulse", "obsidian_shard", "retro_wave", "pixel_dream"];
+const modifiers = ["none", "sudden_death", "shrinking_arena", "titans", "vampire_kiss", "necromancy", "magnet", "repel", "lok_bounty", "gravity_well", "time_distortion", "chaos_vortex"];
+const environments = ["none", "ice", "blackhole", "lava", "storm", "bouncy", "wrap", "blackout"];
 const weapons = ["standard", "roulette", "melee_mash", "ranged_test", "none"];
 const HOLD_REPEAT_MS = 150;
 
@@ -78,6 +79,7 @@ class PageBattle {
   frame = 0;
   previous = performance.now();
   npcAt = 0;
+  bountyAt = performance.now() + 8000;
   lastNpcSide: Side = 2;
   heldSides = new Map<number, HeldSpawn>();
   heldKeys = new Map<string, HeldSpawn>();
@@ -88,11 +90,44 @@ class PageBattle {
     this.variant = variant;
     this.host = document.createElement("div");
     this.host.id = "lok-kinetic-official-page";
+    this.host.dataset.variant = variant;
     this.host.style.cssText = "position:fixed;inset:0;z-index:2147483645;pointer-events:none";
     this.root = this.host.attachShadow({ mode: "open" });
     this.root.innerHTML = `<style>
       :host{all:initial}*,*:before,*:after{box-sizing:border-box}.arena{position:fixed;inset:0;pointer-events:none;image-rendering:pixelated}.ui{font:600 13px system-ui,sans-serif;color:white;text-shadow:0 1px 3px black;pointer-events:auto}.top{position:fixed;left:12px;top:12px;right:12px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.badge,.controls,.panel{background:#101722ec;border:1px solid #80dcff99;box-shadow:0 8px 30px #0009;border-radius:12px}.badge{padding:10px 13px;max-width:48vw}.badge strong{color:#a8ebff}.controls{display:flex;gap:4px;flex-wrap:wrap;padding:6px}button,select,input{font:inherit}button{border:1px solid #ffffff66;border-radius:8px;background:#2b4058;color:#fff;padding:8px 10px;cursor:pointer}button:hover,button:focus-visible{background:#416b89;outline:2px solid #9eeaff}button[data-active="true"]{background:#357663}.bottom{position:fixed;bottom:12px;left:12px;right:12px;display:flex;justify-content:space-between;gap:10px}.spawn{font-size:16px;font-weight:800;min-height:52px;min-width:132px;touch-action:none;user-select:none}.spawn[data-spraying="true"]{filter:brightness(1.35);box-shadow:0 0 20px #8de6ff99}.spawn[data-side="1"]{background:#694050}.spawn[data-side="2"]{background:#375b79}.panel{position:fixed;right:12px;top:65px;width:min(430px,calc(100vw - 24px));max-height:min(75vh,720px);overflow:auto;padding:18px;display:none}.panel[data-open="true"]{display:block}.panel h2{margin:0 0 10px;font-size:22px}.panel section{margin:12px 0}.panel label{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0}.panel select,.panel input{max-width:55%;background:#172638;color:#fff;border:1px solid #668ca4;border-radius:6px;padding:6px}.panel .entry{border-bottom:1px solid #ffffff30;padding:8px 0}.panel .entry strong{display:block}.panel .entry small{color:#b9d7e4}.panel a{color:#8de6ff}.notice{color:#bcd3df;font-size:12px;line-height:1.4}.panel[data-minimized="true"]{height:58px;min-height:58px;overflow:hidden}.panel[data-minimized="true"]>:not([data-creator-head]){display:none}[data-creator-head]{display:flex;align-items:center;justify-content:space-between;gap:12px}[data-creator-head] h2{font-size:18px!important}.panel [data-timeline]{max-width:65%}.panel [data-upload]{max-width:62%}@media(max-width:640px){.top{flex-direction:column}.badge{max-width:100%;font-size:11px}.controls{max-width:100%}.controls button{padding:6px}.panel{top:105px}.spawn{min-width:112px}}
-    </style><canvas class="arena"></canvas><div class="ui"><div class="top"><div class="badge" role="status"></div><div class="controls"><button data-action="creator">Creative Sandbox</button><button data-action="modifiers" title="M">Modifiers M</button><button data-action="bestiary">Bestiary</button><button data-action="settings">Settings</button><button data-action="pause">Pause</button><button data-action="exit">Restore page</button></div></div><div class="panel" role="dialog" aria-label="Kinetic Souls controls"></div><div class="bottom"><button class="spawn" data-side="1" aria-label="Spawn left team; hold to repeat" title="Tap or hold A to launch the left team">P1 · Spawn left</button><button class="spawn" data-side="2" aria-label="Spawn right team; hold to repeat" title="Tap or hold L to launch the right team">P2 / NPC · Spawn right · L</button></div></div>`;
+    </style><style>
+      :host{--ks-hot:#ff9944;--ks-cold:#ccaaff;--ks-team1:#ff6655;--ks-team2:#5599ff}
+      :host([data-variant="ks2"]){--ks-hot:#a77cff;--ks-cold:#54e5ff;--ks-team1:#ff765f;--ks-team2:#67b6ff}
+      .ui{font:700 12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.025em;text-shadow:0 1px 2px #000}
+      .badge,.controls,.panel{background:linear-gradient(135deg,#101018f5,#141b2cf0);border:1px solid color-mix(in srgb,var(--ks-cold) 72%,transparent);border-radius:4px;box-shadow:0 0 0 1px #000a,inset 0 1px #ffffff12,0 10px 32px #000b}
+      .badge{padding:9px 12px;max-width:min(510px,55vw);min-width:280px;border-left:3px solid var(--ks-hot)}
+      .hud-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding-bottom:6px;border-bottom:1px solid #ffffff24}
+      .hud-brand{font-size:11px;letter-spacing:.13em;color:var(--ks-cold)}.hud-brand b{color:var(--ks-hot)}
+      .hud-clock{color:#ffe36c;font-size:17px;font-variant-numeric:tabular-nums;text-shadow:0 0 12px #ffd45a77}
+      .hud-score{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-top:7px}
+      .hud-team{display:flex;justify-content:space-between;gap:8px;color:#d9d8e6}.hud-team:first-child strong{color:var(--ks-team1)}.hud-team:last-child strong{color:var(--ks-team2)}
+      .hud-meta{margin-top:6px;color:#a9a8bd;font-size:10px}.hud-meta strong{color:#f2e6ff}
+      .controls{gap:4px;padding:5px}
+      button,select,input{font:inherit}button{border:1px solid #ffffff3d;border-radius:3px;background:#211d31;color:#f7f2ff;padding:7px 9px;cursor:pointer;text-transform:uppercase;font-size:10px;font-weight:900;letter-spacing:.045em;transition:background-color .12s,border-color .12s,transform .12s}
+      button:hover,button:focus-visible{background:#383050;border-color:var(--ks-hot);outline:2px solid var(--ks-cold);outline-offset:1px}button:active{transform:translateY(1px)}
+      .controls button[data-action="modifiers"],.controls button[data-action="bestiary"]{color:#ffe36c}
+      .controls button[data-action="pause"]{color:var(--ks-cold)}.controls button[data-action="exit"]{color:#ff9b8c}
+      .spawn{font-size:12px;font-weight:900;min-height:52px;min-width:144px;touch-action:none;user-select:none;letter-spacing:.06em}
+      .spawn[data-spraying="true"]{filter:brightness(1.35);box-shadow:0 0 18px #8de6ff88}
+      .spawn[data-side="1"]{background:linear-gradient(135deg,#4a202b,#291920);border-color:var(--ks-team1);color:#ffb4a9}
+      .spawn[data-side="2"]{background:linear-gradient(135deg,#1c314d,#1a1f31);border-color:var(--ks-team2);color:#bbd9ff}
+      .panel{border-top:3px solid var(--ks-hot);padding:16px;font-size:12px}
+      .panel h2{margin:0 0 12px;font-size:16px;line-height:1.25;letter-spacing:.09em;text-transform:uppercase;color:var(--ks-cold);text-shadow:0 0 10px color-mix(in srgb,var(--ks-cold) 35%,transparent)}
+      .panel section{margin:13px 0;padding-top:10px;border-top:1px solid #ffffff20}.panel label{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:9px 0;color:#e7e1f0}
+      .panel select,.panel input{max-width:58%;background:#100e19;color:#fff;border:1px solid #746692;border-radius:3px;padding:6px}
+      .panel input[type="checkbox"]{accent-color:var(--ks-hot)}.panel input[type="range"]{accent-color:var(--ks-hot)}
+      .panel .entry{border-bottom:1px solid #ffffff24;padding:9px 2px}.panel .entry strong{display:block}.panel .entry small{color:#b9d7e4}
+      .panel a{color:var(--ks-cold)}.notice{color:#bcb8cd;font-size:11px;line-height:1.5}
+      .panel [data-scene],.panel .controls button{border-color:#8570ae;background:#241c38;color:#e9dcff}
+      .bottom{gap:12px}.panel[data-minimized="true"]{height:58px;min-height:58px;overflow:hidden}
+      @media(max-width:640px){.top{flex-direction:column;align-items:stretch}.badge{max-width:100%;min-width:0;font-size:10px}.controls{max-width:100%;justify-content:space-between}.controls button{padding:7px 6px;font-size:9px}.panel{top:138px;max-height:calc(100dvh - 220px)}.spawn{min-width:0;width:calc(50vw - 20px);min-height:56px;font-size:11px}}
+      @media(prefers-reduced-motion:reduce){button{transition:none}}
+    </style><canvas class="arena"></canvas><div class="ui"><div class="top"><div class="badge" aria-label="Kinetic Souls match status"></div><div class="controls"><button data-action="creator">Creative Sandbox</button><button data-action="modifiers" title="M">Modifiers · M</button><button data-action="bestiary">Bestiary</button><button data-action="settings">Settings</button><button data-action="pause">Pause</button><button data-action="exit">Restore page</button></div></div><div class="panel" role="dialog" aria-label="Kinetic Souls controls"></div><div class="bottom"><button class="spawn" data-side="1" aria-label="Spawn left team; hold to repeat" title="Tap or hold A to launch the left team">P1 · Spawn left</button><button class="spawn" data-side="2" aria-label="Spawn right team; hold to repeat" title="Tap or hold L to launch the right team">P2 / NPC · Spawn right · L</button></div></div>`;
     document.body.appendChild(this.host);
     this.canvas = this.root.querySelector("canvas")!;
     this.ctx = this.canvas.getContext("2d")!;
@@ -217,13 +252,25 @@ class PageBattle {
     this.updateHud();
   }
 
+  spawnBounty() {
+    if (this.fighters.length >= 118) return;
+    const x = scrollX + innerWidth * (0.2 + Math.random() * 0.6);
+    const y = scrollY + innerHeight * (0.22 + Math.random() * 0.56);
+    const fighter = this.variant === "classic"
+      ? spawnClassic(3, settings.modifier as never, this.fighters as ReturnType<typeof spawnClassic>[], false, false, "none", settings.speed, x, y, "bounty")
+      : spawnKs2(3, settings.modifier as never, this.fighters as ReturnType<typeof spawnKs2>[], false, false, "none", settings.speed, x, y, "bounty");
+    this.fighters.push(fighter);
+    this.floatingTexts.push({ x, y: y - 26, value: "BOUNTY TARGET", color: "#ffd700", life: 1100 });
+  }
+
   updateHud() {
     const left = this.fighters.filter(f => !f.dead && f.team === 1).length;
     const right = this.fighters.filter(f => !f.dead && f.team === 2).length;
     const time = Math.ceil(this.remainingMs / 1000);
     const control = performance.now() < this.rightControlUntil ? "Player 2" : settings.npcEnabled ? "NPC" : "Right idle";
     const combo = performance.now() < this.comboUntil ? ` · Combo ×${this.breakCombo}` : "";
-    this.hud.innerHTML = `<strong>KINETIC SOULS ${this.variant === "ks2" ? "2 · ALPHA" : "CLASSIC · 1"} · ${String(Math.floor(time / 60)).padStart(2, "0")}:${String(time % 60).padStart(2, "0")}</strong><br>P1 ${left} · ${this.teamKOs[1]} KOs · ${control} ${right} · ${this.teamKOs[2]} KOs<br>Page breaks ${this.score} · Chain ${this.chainBreaks}${combo} · ${this.matchFinished ? "MATCH COMPLETE" : "Tap to launch · Hold A/L or a side control for a stream"}`;
+    const version = this.variant === "ks2" ? "KS2 · ALPHA" : "CLASSIC · 1";
+    this.hud.innerHTML = `<div class="hud-head"><span class="hud-brand">KINETIC <b>SOULS</b> <small>${version}</small></span><span class="hud-clock">${String(Math.floor(time / 60)).padStart(2, "0")}:${String(time % 60).padStart(2, "0")}</span></div><div class="hud-score"><span class="hud-team"><span>P1 · ${left}</span><strong>${this.teamKOs[1]} KO</strong></span><span class="hud-team"><span>${control} · ${right}</span><strong>${this.teamKOs[2]} KO</strong></span></div><div class="hud-meta">PAGE BREAKS <strong>${this.score}</strong> · CHAIN <strong>${this.chainBreaks}</strong>${combo ? `<strong>${combo}</strong>` : ""} · ${this.matchFinished ? "MATCH COMPLETE" : "A / L TO SPAWN · HOLD TO SPRAY"}</div>`;
   }
 
   awardKo(fighter: Fighter, team: number) {
@@ -234,7 +281,7 @@ class PageBattle {
       ? classicTeamColor(team, settings.theme as never, fighter.kineticType as never)
       : ks2TeamColor(team, settings.theme as never, fighter.kineticType as never);
     const name = String(fighter.kineticType || "kinetic").replaceAll("_", " ").toUpperCase();
-    this.floatingTexts.push({ x: fighter.x, y: fighter.y - 24, value: team === 5 ? "UNDEAD K.O." : `${name} K.O.`, color, life: 1050 });
+    this.floatingTexts.push({ x: fighter.x, y: fighter.y - 24, value: fighter.kineticType === "bounty" ? "BOUNTY CLAIMED!" : team === 5 ? "UNDEAD K.O." : `${name} K.O.`, color: fighter.kineticType === "bounty" ? "#ffd700" : color, life: 1050 });
     this.screenShake = Math.max(this.screenShake, 3.5);
     for (let i = 0; i < 14 && this.particles.length < 350; i++) {
       const angle = Math.random() * Math.PI * 2, speed = 2 + Math.random() * 5;
@@ -276,6 +323,7 @@ class PageBattle {
         held.lastSpawnAt = now;
       }
       if (!this.matchFinished && settings.npcEnabled && now >= this.rightControlUntil && now > this.npcAt) { this.spawn(2, false); this.npcAt = now + settings.spawnMs; }
+      if (!this.matchFinished && settings.modifier === "lok_bounty" && now >= this.bountyAt) { this.spawnBounty(); this.bountyAt = now + 8000; }
       if (now > this.scanAt) { this.scan(); this.scanAt = now + 900; }
       if (!this.matchFinished) this.step(dt);
       if (now >= this.snapshotAt) { this.snapshots.push({ at: 120_000 - this.remainingMs, fighters: this.fighters.map(f => ({ x: f.x, y: f.y, angle: f.angle })), score: this.score, kos: { ...this.teamKOs } }); this.snapshots = this.snapshots.slice(-121); this.snapshotAt = now + 1000; }
@@ -289,8 +337,11 @@ class PageBattle {
 
   step(dt: number) {
     const dtMs = dt * 16.67;
-    const minX = 18, maxX = Math.max(innerWidth - 18, document.documentElement.scrollWidth - 18);
-    const minY = 85, maxY = Math.max(innerHeight - 18, document.documentElement.scrollHeight - 18);
+    const now = performance.now();
+    const worldWidth = Math.max(innerWidth, document.documentElement.scrollWidth), worldHeight = Math.max(innerHeight, document.documentElement.scrollHeight);
+    const shrink = settings.modifier === "shrinking_arena" ? Math.min(0.32, (120_000 - this.remainingMs) / 120_000 * 0.32) : 0;
+    const minX = 18 + Math.min(worldWidth * 0.38, worldWidth * shrink), maxX = Math.max(minX + 36, worldWidth - 18 - worldWidth * shrink);
+    const minY = 85 + Math.min(Math.max(0, worldHeight - 120) * 0.38, worldHeight * shrink), maxY = Math.max(minY + 80, worldHeight - 18 - worldHeight * shrink);
     const visibleTargets = [...this.targets.values()].filter(t => !t.destroyed && t.x + t.width >= scrollX - 100 && t.x <= scrollX + innerWidth + 100 && t.y + t.height >= scrollY - 100 && t.y <= scrollY + innerHeight + 100);
     if (this.variant === "ks2" && settings.motion === "battle") {
       // KS2's standalone AI and fighter abilities operate on document coordinates here.
@@ -343,6 +394,11 @@ class PageBattle {
       if (fighter.stunTime > 0) fighter.stunTime = Math.max(0, fighter.stunTime - dtMs);
       if (settings.environment === "blackhole") { fighter.vx += (scrollX + innerWidth / 2 - fighter.x) * 0.0001; fighter.vy += (scrollY + innerHeight / 2 - fighter.y) * 0.0001; }
       if (settings.environment === "ice") { fighter.vx *= 1.002; fighter.vy *= 1.002; }
+      if (settings.environment === "storm") { fighter.vx += Math.sin(now * 0.001 + fighter.y * 0.009) * 0.16 * dt; fighter.vy += Math.cos(now * 0.0013 + fighter.x * 0.006) * 0.08 * dt; }
+      if (settings.environment === "lava" && fighter.y >= maxY - 52) {
+        fighter.hp -= 0.45 * dt; fighter.flashFrames = Math.max(fighter.flashFrames, 1);
+        if (fighter.hp <= 0) this.awardKo(fighter, fighter.team === 1 ? 2 : fighter.team === 2 ? 1 : 0);
+      }
       const timeScale = this.variant === "classic" && settings.modifier === "time_distortion"
         ? 1 + Math.sin(performance.now() * 0.005 + fighter.id) * 0.5
         : 1;
@@ -763,6 +819,21 @@ class PageBattle {
     ctx.save();
     const shakeX = Math.sin(now * 0.083) * this.screenShake, shakeY = Math.cos(now * 0.071) * this.screenShake * 0.55;
     ctx.translate(shakeX, shakeY); ctx.translate(-scrollX, -scrollY);
+    if (settings.environment === "lava") {
+      const floorY = Math.max(innerHeight, document.documentElement.scrollHeight) - 18;
+      if (floorY >= scrollY - 12 && floorY <= scrollY + innerHeight + 12) {
+        const heat = ctx.createLinearGradient(0, floorY - 18, 0, floorY + 5);
+        heat.addColorStop(0, "rgba(255,92,30,0)"); heat.addColorStop(0.7, "rgba(255,92,30,.75)"); heat.addColorStop(1, "rgba(255,217,92,.9)");
+        ctx.fillStyle = heat; ctx.fillRect(scrollX, floorY - 18, innerWidth, 24);
+      }
+    }
+    if (settings.modifier === "shrinking_arena") {
+      const worldWidth = Math.max(innerWidth, document.documentElement.scrollWidth), worldHeight = Math.max(innerHeight, document.documentElement.scrollHeight);
+      const shrink = Math.min(0.32, (120_000 - this.remainingMs) / 120_000 * 0.32);
+      const left = 18 + worldWidth * shrink, top = 85 + Math.max(0, worldHeight - 120) * shrink;
+      ctx.save(); ctx.strokeStyle = "rgba(255,106,135,.78)"; ctx.shadowColor = "#ff5f8c"; ctx.shadowBlur = 12; ctx.lineWidth = 3; ctx.setLineDash([12, 9]);
+      ctx.strokeRect(left, top, Math.max(36, worldWidth - left * 2), Math.max(80, worldHeight - top - 18)); ctx.setLineDash([]); ctx.restore();
+    }
     for (const bomb of this.bombs) {
       if (!bomb.active || bomb.x < scrollX - 160 || bomb.x > scrollX + innerWidth + 160 || bomb.y < scrollY - 160 || bomb.y > scrollY + innerHeight + 160) continue;
       ctx.strokeStyle = "#b177ff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bomb.x, bomb.y, Math.min(bomb.radius, 18 + (3000 - bomb.timer) * 0.025), 0, Math.PI * 2); ctx.stroke();
@@ -857,6 +928,7 @@ class PageBattle {
     const hot = this.variant === "classic" ? "255,92,48" : "157,105,255";
     const cool = this.variant === "classic" ? "255,196,100" : "84,229,255";
     const pulse = 0.5 + Math.sin(time * 0.0022) * 0.5;
+    if (settings.environment === "blackout") { ctx.fillStyle = "rgba(4,3,12,.82)"; ctx.fillRect(0, 0, w, h); }
     const glow = ctx.createRadialGradient(w * 0.52, h * 0.48, 4, w * 0.52, h * 0.48, Math.max(w, h) * 0.8);
     glow.addColorStop(0, `rgba(${hot},${0.14 + pulse * 0.08})`);
     glow.addColorStop(0.58, `rgba(${hot},0.035)`);
@@ -898,7 +970,8 @@ class PageBattle {
     if (name === "close" || (this.panel.dataset.open === "true" && this.panel.dataset.view === name)) { this.panel.dataset.open = "false"; return; }
     if (name === "creator" && this.panel.dataset.view === "creator" && this.panel.dataset.open === "true") { this.panel.dataset.minimized = this.panel.dataset.minimized === "true" ? "false" : "true"; return; }
     this.panel.dataset.view = name; this.panel.dataset.open = "true"; this.panel.dataset.minimized = "false";
-    const select = (label: string, key: keyof Settings, options: string[]) => `<label>${label}<select data-setting="${key}">${options.map(option => `<option value="${option}" ${settings[key] === option ? "selected" : ""}>${option.replaceAll("_", " ")}</option>`).join("")}</select></label>`;
+    const optionLabel = (option: string) => ({ none: "None", sudden_death: "Sudden Death", shrinking_arena: "Shrinking Arena", lok_bounty: "LoK Bounty", titans: "Titans", vampire_kiss: "Vampire's Kiss", time_distortion: "Time Distortion", chaos_vortex: "Chaos Vortex", gravity_well: "Gravity Well", melee_mash: "Melee Mash", ranged_test: "Ranged Test", blackhole: "Black Hole", gameboy: "Game Boy", paper_sketch: "Paper Sketch", wireframe_matrix: "Wireframe Matrix", blood_moon: "Blood Moon", runesite_ultimate: "Runesite Ultimate", neon_abyss: "Neon Abyss", rgb_cycle: "RGB Cycle", glassmorphism: "Glassmorphism", celestial_forge: "Celestial Forge", neon_overdrive: "Neon Overdrive", matrix_reloaded: "Matrix Reloaded", stellar_drift: "Stellar Drift", neon_pulse: "Neon Pulse", obsidian_shard: "Obsidian Shard", retro_wave: "Retro Wave", pixel_dream: "Pixel Dream", lava: "Lava Floor", storm: "Storm", blackout: "Blackout" } as Record<string, string>)[option] || option.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
+    const select = (label: string, key: keyof Settings, options: string[]) => `<label>${label}<select data-setting="${key}">${options.map(option => `<option value="${option}" ${settings[key] === option ? "selected" : ""}>${optionLabel(option)}</option>`).join("")}</select></label>`;
     const npc = `<label>Right-side NPC<input data-setting="npcEnabled" type="checkbox" ${settings.npcEnabled ? "checked" : ""}></label>`;
     if (name === "creator") {
       this.panel.innerHTML = `<div data-creator-head><h2>Creative Sandbox · Live Match</h2><button data-minimize>Minimize</button></div><p class="notice">These objects share the live match physics. Fighters collide with and break them; the page underneath is restored when you leave.</p><section><strong>Starter scenes</strong><div class="controls"><button data-scene="neon">Neon tiles</button><button data-scene="ruins">Rift ruins</button><button data-scene="garden">Sky garden</button></div></section><section><label>Add image or video<input data-upload type="file" accept="image/*,video/mp4,video/webm,video/ogg"></label></section><section><label>Match replay · scrub while paused<input data-timeline type="range" min="0" max="${Math.max(0, this.snapshots.length - 1)}" value="${this.replayIndex ?? Math.max(0, this.snapshots.length - 1)}"></label><small data-replay-time>${Math.ceil((this.snapshots[this.replayIndex ?? Math.max(0, this.snapshots.length - 1)]?.at || 0) / 1000)}s</small><label>Video playback position<input data-video-timeline type="range" min="0" max="0" value="0"></label></section><section class="controls"><button data-rebuild>Rebuild scene</button><button data-save>Save scene</button><button data-open-scene>Open latest scene</button><button data-export>Export arena still</button><button data-record>Record 8-second replay</button></section><p class="notice" data-creator-status role="status">Local media and scenes stay on this device. Drag props to place them. Video stays muted.</p>`;
@@ -916,7 +989,8 @@ class PageBattle {
       const entries = this.variant === "classic" ? classicBestiary : ks2Bestiary;
       this.panel.innerHTML = `<h2>${this.variant === "classic" ? "Classic" : "KS2"} Bestiary</h2><p class="notice">Choose a fighter for the next spawn.</p>${select("Spawn fighter", "fighter", entries.filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<div>${entries.map(e => `<div class="entry"><strong style="color:${e.color}">${e.name}</strong><small>${e.role} · HP ${e.hp} · ${e.weapon}</small><div>${e.lore}</div></div>`).join("")}</div>`;
     } else if (name === "modifiers") {
-      this.panel.innerHTML = `<h2>Live modifiers · M</h2><p class="notice">These Kinetic match modifiers run over the live page. Sudden Death and Titans affect new spawns; Necromancy raises neutral undead. Gravity Well, Time Distortion, and Chaos Vortex apply the version's original motion behaviors. DVD mode keeps teams non-damaging.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifiers)}${select("Environment", "environment", environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", this.variant === "classic" ? themes : [...themes, "cyberpunk", "ethereal", "wasteland", "void", "outrun", "frostbite", "solaris", "deepsea", "nebula"])}${select("Fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
+      const themeChoices = this.variant === "classic" ? classicThemes : ks2Themes;
+      this.panel.innerHTML = `<h2>LoK Game Modifiers · M</h2><p class="notice">Kinetic Souls combat, environment, weapon, theme, and fighter controls. These settings change the live page match. Options that require the standalone arena stay linked there.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifiers)}${select("Environment", "environment", environments)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", themeChoices)}${select("Spawn fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
     } else {
       this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC on right</button><p class="notice">Tap A/L or a team control to launch one fighter. Hold either to keep launching; right-side input takes over Player 2 for 12 seconds.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
     }
