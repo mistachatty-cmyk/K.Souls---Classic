@@ -475,8 +475,10 @@ class PageBattle {
         const contact = resolveTargetContact(fighter.x, fighter.y, target.x, target.y, target.width, target.height, 15 * fighter.scale);
         if (!contact) continue;
         const incomingX = fighter.vx, incomingY = fighter.vy;
-        const impactSpeed = Math.abs(incomingX * contact.normalX + incomingY * contact.normalY);
+        const normalVelocity = incomingX * contact.normalX + incomingY * contact.normalY;
         fighter.x = contact.fighterX; fighter.y = contact.fighterY;
+        if (normalVelocity >= 0) continue;
+        const impactSpeed = -normalVelocity;
         const recoil = fighterTargetRecoil(incomingX, incomingY, contact.normalX, contact.normalY, settings.environment === "bouncy" ? 1.2 : 0.9);
         const recoilSpeed = Math.hypot(recoil.vx, recoil.vy), maxRecoilSpeed = 16 * settings.speed;
         const recoilScale = recoilSpeed > maxRecoilSpeed ? maxRecoilSpeed / recoilSpeed : 1;
