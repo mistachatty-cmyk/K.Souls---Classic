@@ -11,10 +11,10 @@ import { fighterTargetRecoil, impactImpulse, normalizeImpactDirection, resolveTa
 import { pageEffects } from "./effects.mjs";
 import { createFracturePattern } from "./fracture.mjs";
 import { createGlassShardPolygons } from "./glass-shards.mjs";
+import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
-type HeldSpawn = { side: Side; lastSpawnAt: number };
 type Fighter = ReturnType<typeof spawnClassic> | ReturnType<typeof spawnKs2>;
 type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; impactDX: number; impactDY: number; lastHitAt: number; boss: boolean; stage: number; material: PageMaterial; fractures: FractureMark[]; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number };
 type Projectile = { x: number; y: number; previousX: number; previousY: number; vx: number; vy: number; team: number; life: number; type: "laser" | "fireball"; color: string };
@@ -40,8 +40,6 @@ const ks2Environments = [...classicEnvironments, "solar_flares", "magnetic_field
 const weapons = ["standard", "roulette", "melee_mash", "ranged_test"];
 const matchDurations = ["60000", "120000", "180000", "300000"];
 const pageSides = ["1", "2"];
-const HOLD_REPEAT_MS = 150;
-
 let game: PageBattle | null = null;
 const createRunId = () => {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -195,10 +193,9 @@ class PageBattle {
     const key = event.key.toLowerCase();
     if (key === "a" || key === "l") {
       event.preventDefault();
-      if (!this.heldKeys.has(key) && !this.matchFinished) {
+      if (!this.matchFinished && startHeldSpawn(this.heldKeys, key, key === "a" ? 1 : 2, performance.now())) {
         const side = key === "a" ? 1 : 2;
         this.spawn(side, true);
-        this.heldKeys.set(key, { side, lastSpawnAt: performance.now() });
         const button = this.root.querySelector<HTMLElement>(`button[data-side="${side}"]`);
         if (button) button.dataset.spraying = "true";
       }
@@ -362,16 +359,12 @@ class PageBattle {
     if (!this.paused && !this.matchFinished) {
       this.remainingMs = Math.max(0, this.remainingMs - elapsedMs);
       if (this.remainingMs <= 0) { this.finishMatch(); }
-      if (!this.matchFinished) for (const [pointerId, held] of this.heldSides) {
-        if (now - held.lastSpawnAt < HOLD_REPEAT_MS) continue;
+      if (!this.matchFinished) for (const [pointerId, held] of advanceHeldSpawns(this.heldSides, now, HOLD_REPEAT_MS)) {
         this.spawn(held.side, true);
-        held.lastSpawnAt = now;
         if (!this.root.querySelector(`button[data-side="${held.side}"][data-spraying="true"]`)) this.heldSides.delete(pointerId);
       }
-      if (!this.matchFinished) for (const held of this.heldKeys.values()) {
-        if (now - held.lastSpawnAt < HOLD_REPEAT_MS) continue;
+      if (!this.matchFinished) for (const [, held] of advanceHeldSpawns(this.heldKeys, now, HOLD_REPEAT_MS)) {
         this.spawn(held.side, true);
-        held.lastSpawnAt = now;
       }
       if (!this.matchFinished && settings.npcEnabled && now >= this.rightControlUntil && now > this.npcAt) { this.spawn(this.matchNpcSide, false); this.npcAt = now + settings.spawnMs; }
       if (!this.matchFinished && settings.modifier === "lok_bounty" && now >= this.bountyAt) { this.spawnBounty(); this.bountyAt = now + 8000; }
