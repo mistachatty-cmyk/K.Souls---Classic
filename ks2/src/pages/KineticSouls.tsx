@@ -9,7 +9,7 @@ import type {
   GameMode, OpponentMode, ThemeMode, LokModifier, 
   CameraMode, ViewMode, MinimapPosition, WeaponStyle, 
   Environment, ScreenState, WeaponType, KineticType, 
-  SkinType, LokPassportData, GameState, Character, Sabre, Particle, 
+  SkinType, GameState, Character, Sabre, Particle,
   Projectile, Ghost, FloatingText, KillFeedMsg, Drop, Essence, Portal 
 } from "../game/types";
 import { isKineticModelStyle, readKineticModelStyle, writeKineticModelStyle } from "../game/modelStyle";
@@ -134,10 +134,8 @@ export default function KineticSouls() {
     if (typeof window === "undefined") return false;
     try { return window.localStorage.getItem(TUTORIAL_SEEN_KEY) !== "1"; } catch { return false; }
   });
-  const [showTitleShop, setShowTitleShop] = useState(false);
-  const [purchasedTitles, setPurchasedTitles] = useState<string[]>(["default"]);
-  const [selectedTitle, setSelectedTitle] = useState<string>("default");
   const [isPortrait, setIsPortrait] = useState(false);
+  const [portraitWarningDismissed, setPortraitWarningDismissed] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showSkins, setShowSkins] = useState(false);
   const [bestiaryScroll] = useState(0);
@@ -166,33 +164,25 @@ export default function KineticSouls() {
     else setMediaType("audio");
   }, [mediaUrl]);
 
-  const hostCodeRef = useRef<string>("LOK-" + Math.floor(1000 + Math.random() * 9000));
-  const [joinInput, setJoinInput] = useState<string>("");
-  const [showHostLink, setShowHostLink] = useState(false);
-  const [isLoadingLink, setIsLoadingLink] = useState(false);
-
   const refMenuScroll = useRef(0);
   const refBestReplay = useRef<{ frames: any[]; victimId: number; maxV: number } | null>(null);
   const refReplayPlaybackIdx = useRef(0);
+  const pendingModelStyleRef = useRef<"block" | "classic" | "hd" | "sabre" | null>(null);
+  const matchSessionRef = useRef<string | null>(null);
+  const matchStartedAtRef = useRef(0);
+  const matchResultSentRef = useRef(false);
 
   // --- PERFORMANCE SYSTEM: OFFSCREEN SPRITE CACHE ---
   const spriteCacheRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
-
-  const [passport, setPassport] = useState<LokPassportData>({
-    connected: false,
-    username: "Guest",
-    lokCoins: 0,
-    equippedBackground: null,
-    inventory: [],
-  });
-  const lokCoinsRef = useRef<number>(0);
 
   void bgPatternRef;
   void bestiaryScroll;
 
   useEffect(() => {
     const checkOrientation = () => {
-      setIsPortrait(window.innerHeight > window.innerWidth && window.innerWidth < 768);
+      const portrait = window.innerHeight > window.innerWidth && window.innerWidth < 768;
+      setIsPortrait(portrait);
+      if (!portrait) setPortraitWarningDismissed(false);
     };
     window.addEventListener("resize", checkOrientation);
     checkOrientation();
@@ -378,6 +368,7 @@ export default function KineticSouls() {
     spriteCacheRef.current.clear();
     const parentOrigin = getGsixParentOrigin();
     if (parentOrigin) {
+      pendingModelStyleRef.current = style;
       window.parent.postMessage({ channel: MODEL_SETTINGS_CHANNEL, type: "save", modelStyle: style }, parentOrigin);
     }
   }, []);
@@ -398,15 +389,25 @@ export default function KineticSouls() {
         window.clearInterval(helloTimer);
         if (!loadInProgress) {
           loadInProgress = true;
-          send("load", { localModelStyle: readKineticModelStyle() });
+          send("load", {
+            localModelStyle: readKineticModelStyle(),
+            pendingModelStyle: pendingModelStyleRef.current,
+          });
         }
       } else if (message.type === "loaded") {
         loadInProgress = false;
         const style = isKineticModelStyle(message.modelStyle) ? message.modelStyle : readKineticModelStyle();
+        if (message.savedPending === true && pendingModelStyleRef.current === style) {
+          pendingModelStyleRef.current = null;
+        }
         stateRef.current.kineticStyle = style;
         writeKineticModelStyle(style);
         spriteCacheRef.current.clear();
         setTick((tick) => tick + 1);
+      } else if (message.type === "saved" && isKineticModelStyle(message.modelStyle)) {
+        if (pendingModelStyleRef.current === message.modelStyle) pendingModelStyleRef.current = null;
+      } else if (message.type === "save_failed") {
+        // Keep the local choice pending so the next signed-in handshake retries it.
       }
     };
     window.addEventListener("message", onMessage);
@@ -479,24 +480,6 @@ export default function KineticSouls() {
   useEffect(() => { p1SkinRef.current = p1Skin; }, [p1Skin]);
   useEffect(() => { p2SkinRef.current = p2Skin; }, [p2Skin]);
 
-
-  const connectLokPassport = () => {
-    const bgUrl = "https://www.transparenttextures.com/patterns/hexellence.png";
-    lokCoinsRef.current = 15420;
-    setPassport({
-      connected: true,
-      username: "Eric_GSix",
-      lokCoins: 15420,
-      equippedBackground: bgUrl,
-      inventory: [
-        "Gilded Skin",
-        "Neon Skin",
-        "Moon Gravity Mod",
-        "Wireframe Matrix",
-      ],
-    });
-    setTick((t) => t + 1);
-  };
 
   /**
    * Spawns floating text (e.g., damage numbers, heals) at a specific world coordinate.
@@ -580,6 +563,19 @@ export default function KineticSouls() {
    */
   const endGame = useCallback(() => {
     const st = stateRef.current;
+    if (!matchResultSentRef.current && matchSessionRef.current) {
+      matchResultSentRef.current = true;
+      const parentOrigin = getGsixParentOrigin();
+      if (parentOrigin) {
+        const durationSeconds = Math.max(5, Math.min(3600, Math.floor((Date.now() - matchStartedAtRef.current) / 1000)));
+        const score = Math.max(0, Math.min(1_000_000, Math.floor(st.directorScore || st.p1Score || 0)));
+        window.parent.postMessage({
+          channel: MODEL_SETTINGS_CHANNEL,
+          type: "result",
+          result: { version: 1, sessionId: matchSessionRef.current, mode: st.mode, durationSeconds, score },
+        }, parentOrigin);
+      }
+    }
     let winner = "";
     if (st.mode === "horde" || st.mode === "infection")
       winner = st.p1Score >= 50 ? "You Survived!" : "The Horde Consumed You";
@@ -593,7 +589,6 @@ export default function KineticSouls() {
       ...st, running: false, over: true, paused: false, winner, draggingId: null,
     };
     screenRef.current = "over";
-    setPassport((p) => ({ ...p, lokCoins: lokCoinsRef.current }));
   }, []);
 
   const getDynamicSpawn = useCallback((team: number, st: GameState, overrideX?: number, overrideY?: number) => {
@@ -640,6 +635,9 @@ export default function KineticSouls() {
    * Initializes and starts a new game based on current configuration refs.
    */
   const startGame = useCallback((xxl: boolean = false) => {
+    matchSessionRef.current = globalThis.crypto?.randomUUID?.() ?? `00000000-0000-4000-8000-${Math.floor(Math.random() * 0xffffffffffff).toString(16).padStart(12, "0")}`;
+    matchStartedAtRef.current = Date.now();
+    matchResultSentRef.current = false;
     // Bug Fix: Safely catching resetCharIdCounter() to prevent TypeError crashes if Spawner.ts isn't fully updated
     try { resetCharIdCounter(); } catch(e) { console.warn("resetCharIdCounter missing"); }
     if (!stateRef.current.optPool) {
@@ -790,21 +788,6 @@ export default function KineticSouls() {
     dataRef.chars.current.push(c);
     setTick(t => t + 1);
   }, [dataRef.chars, getDynamicSpawn]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const lokCode = params.get("lok");
-    if (lokCode) {
-      window.history.replaceState({}, document.title, window.location.pathname);
-      setJoinInput(lokCode.toUpperCase());
-      refs.opp.current = "pvp";
-      stateRef.current.opponent = "pvp";
-      // BUG FIX: This button would persist because startGame wasn't being called
-      // after the state was set. Adding a small delay allows React to update
-      // the state before we try to start the game.
-      startGame();
-    }
-  }, [startGame, refs]);
 
   /**
    * Main Game Engine Loop
@@ -1703,18 +1686,15 @@ export default function KineticSouls() {
                       );
                     }
                   if (screen === "game") {
-                    lokCoinsRef.current += 1;
                     if (Math.abs(velAlongNormal) > 12) {
-                      lokCoinsRef.current += 1;
-                      spawnText((a.x + b.x) / 2, (a.y + b.y) / 2 - 20, "HEAVY HIT +1", "#ffd700");
+                      spawnText((a.x + b.x) / 2, (a.y + b.y) / 2 - 20, "HEAVY HIT", "#ffd700");
                     }
 
                     // --- TRICK SHOT 2.0 BONUSES ---
                     if (state.trickShots && ((a as any).tossedTimer > 0 || (b as any).tossedTimer > 0) && Math.abs(velAlongNormal) > 15) {
                       const skillSource = (a as any).tossedTimer > 0 ? a : b;
                       const skillTarget = (a as any).tossedTimer > 0 ? b : a;
-                      lokCoinsRef.current += 5;
-                      spawnText(skillSource.x, skillSource.y - 40, "TRICKSHOT +5 LoK", "#ffd700");
+                      spawnText(skillSource.x, skillSource.y - 40, "TRICKSHOT!", "#ffd700");
 
                       for (let i = 0; i < 3; i++) {
                         const vx = -nx * 12 + (Math.random() - 0.5) * 4;
@@ -1983,8 +1963,7 @@ export default function KineticSouls() {
                       if (state.stats.highestV < Math.hypot(c.vx, c.vy)) state.stats.highestV = Math.hypot(c.vx, c.vy);
                       state.p1Score++;
                       state.directorScore += c.isBoss ? 50 : 10;
-                      lokCoinsRef.current += c.isBoss ? 25 : 10;
-                      spawnText(killer.x, killer.y - 30, c.isBoss ? "+BOSS +50 LoK" : "+1", c.isBoss ? "#ffd700" : "#00ff88");
+                      spawnText(killer.x, killer.y - 30, c.isBoss ? "+BOSS +50 SCORE" : "+1", c.isBoss ? "#ffd700" : "#00ff88");
                     } else if (killer.team === 2) {
                       state.p2Score++;
                       spawnText(killer.x, killer.y - 30, "+1", "#ff4444");
@@ -2769,161 +2748,47 @@ export default function KineticSouls() {
         </div>
       )}
 
-      {/* Main Menu Passport Overlay */}
-      {screenRef.current === "menu" && (
-        <div style={{ position: "absolute", top: 12, left: 12, zIndex: 100 }}>
-          {passport.connected ? (
-            <div style={{ padding: "8px 12px", background: "rgba(255, 215, 0, 0.15)", border: "1px solid #ffd700", borderRadius: "4px", color: "#ffd700", fontSize: "12px", fontFamily: "monospace", fontWeight: "bold", backdropFilter: "blur(4px)" }}>
-              🏅 {passport.username} · {lokCoinsRef.current} LoK Coins
-              <button onClick={() => setShowTitleShop(!showTitleShop)} style={{ marginLeft: "8px", background: "transparent", border: "none", color: "#ffd700", cursor: "pointer", fontSize: "10px" }}>
-                {showTitleShop ? "CLOSE" : "TITLES"}
-              </button>
-            </div>
-          ) : (
-            <button onClick={connectLokPassport} style={{ background: "rgba(68, 34, 0, 0.8)", color: "#ffd700", border: "1px solid #ffd700", padding: "8px 16px", fontSize: "12px", fontFamily: "monospace", fontWeight: "bold", cursor: "pointer", borderRadius: "4px", backdropFilter: "blur(4px)" }}>
-              Connect LoK Passport
-            </button>
-          )}
-        </div>
-      )}
-
-       {/* Title Shop Overlay */}
-       {showTitleShop && (
-         <div style={{
-           position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-           background: "rgba(10, 5, 20, 0.95)", border: "2px solid #ffd700", borderRadius: "8px",
-           padding: "20px", zIndex: 300, minWidth: "300px", backdropFilter: "blur(8px)"
-         }}>
-           <h3 style={{ color: "#ffd700", fontFamily: "monospace", margin: "0 0 15px 0", textAlign: "center" }}>TITLE PACKAGES</h3>
-           {[
-             { id: "default", name: "Default", coins: 0, desc: "Standard title" },
-             { id: "warrior", name: "Warrior", coins: 100, desc: "Show your battle spirit" },
-             { id: "legend", name: "Legend", coins: 250, desc: "For the elite players" },
-             { id: "shadow", name: "Shadow", coins: 150, desc: "Mysterious aura" },
-             { id: "golden", name: "Golden", coins: 500, desc: "Ultimate status symbol" }
-           ].map(pack => (
-             <div key={pack.id} style={{
-               background: selectedTitle === pack.id ? "rgba(255,215,0,0.2)" : "rgba(255,255,255,0.05)",
-               border: `1px solid ${purchasedTitles.includes(pack.id) ? "#ffd700" : "#444"}`,
-               borderRadius: "4px", padding: "10px", marginBottom: "8px", cursor: "pointer"
-             }} onClick={() => {
-               if (purchasedTitles.includes(pack.id)) {
-                 setSelectedTitle(pack.id);
-               } else if (lokCoinsRef.current >= pack.coins) {
-                 lokCoinsRef.current -= pack.coins;
-                 setPurchasedTitles([...purchasedTitles, pack.id]);
-                 setSelectedTitle(pack.id);
-               }
-             }}>
-               <div style={{ color: "#ffd700", fontFamily: "monospace", fontWeight: "bold" }}>{pack.name}</div>
-               <div style={{ color: "#aaa", fontSize: "11px" }}>{pack.desc}</div>
-               <div style={{ color: purchasedTitles.includes(pack.id) ? "#00ff88" : "#ff4444", fontSize: "11px", marginTop: "4px" }}>
-                 {purchasedTitles.includes(pack.id) ? "✓ OWNED" : `${pack.coins} LoK Coins`}
-               </div>
-             </div>
-           ))}
-           <button onClick={() => setShowTitleShop(false)} style={{ width: "100%", padding: "8px", background: "#333", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer", marginTop: "10px" }}>
-             CLOSE
-           </button>
-         </div>
-       )}
-
-       {/* Networking / Lobby Overlay (.io style) */}
+       {/* Online play is not connected in this alpha; offer local play without a fake invite flow. */}
        {screenRef.current === "menu" && (stateRef.current.opponent === "host" || stateRef.current.opponent === "join") && (
-        <div style={{
+        <div role="dialog" aria-modal="true" aria-labelledby="online-alpha-title" style={{
           position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-          background: "rgba(10, 5, 20, 0.95)", border: "2px solid #ffd700", borderRadius: "8px",
-          padding: "30px", display: "flex", flexDirection: "column", alignItems: "center",
-          boxShadow: "0 0 40px rgba(255, 215, 0, 0.2)", zIndex: 200, minWidth: "320px",
-          backdropFilter: "blur(8px)"
+          background: "rgba(10, 5, 20, 0.97)", border: "2px solid #7c6be8", borderRadius: 8,
+          padding: 24, display: "flex", flexDirection: "column", alignItems: "center",
+          boxShadow: "0 0 40px rgba(124, 107, 232, 0.2)", zIndex: 200,
+          width: "min(420px, calc(100% - 32px))", boxSizing: "border-box",
+          textAlign: "center", color: "#f5f3ff", fontFamily: "monospace"
         }}>
-          <style>{`
-            @keyframes pulse-dot { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
-            @keyframes fadeOut { 0% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
-          `}</style>
-          
-          <h2 style={{ color: "#ffd700", fontFamily: "monospace", margin: "0 0 20px 0", textShadow: "0 0 10px rgba(255,215,0,0.5)", fontSize: "24px" }}>
-            {stateRef.current.opponent === "host" ? "🌐 HOSTING GAME" : "🔗 JOIN GAME"}
+          <p style={{ color: "#b6a1ff", fontSize: 11, letterSpacing: 2, margin: "0 0 8px" }}>ONLINE MULTIPLAYER</p>
+          <h2 id="online-alpha-title" style={{ color: "#fff", margin: "0 0 12px", fontSize: 22 }}>
+            {stateRef.current.opponent === "host" ? "Hosting is not available yet" : "Joining is not available yet"}
           </h2>
-
-          {stateRef.current.opponent === "host" ? (
-            <>
-              <div style={{ color: "#aaa", fontFamily: "monospace", fontSize: "12px", marginBottom: "8px" }}>Share this LoK Code with your opponent:</div>
-              <div style={{ background: "#000", border: "1px dashed #4466ff", padding: "12px 24px", fontSize: showHostLink ? "16px" : "28px", color: "#55aaff", fontFamily: "monospace", fontWeight: "bold", letterSpacing: showHostLink ? "0px" : "4px", borderRadius: "4px", marginBottom: "10px", userSelect: "all", cursor: "copy", wordBreak: "break-all", textAlign: "center" }}>
-                {showHostLink ? `${window.location.origin}?lok=${hostCodeRef.current}` : hostCodeRef.current}
-              </div>
-              
-              {isLoadingLink ? (
-                 <div style={{ color: "#ffd700", fontSize: "12px", marginBottom: "20px", display: "flex", alignItems: "center", gap: "6px", fontFamily: "monospace" }}>
-                    <div style={{ animation: "pulse-dot 1s infinite" }}>⏳</div> Generating secure link...
-                 </div>
-              ) : (
-                 <button onClick={() => {
-                    setIsLoadingLink(true);
-                    setTimeout(() => { setIsLoadingLink(false); setShowHostLink(!showHostLink); }, 600);
-                 }} style={{ background: "transparent", color: "#88aaff", border: "none", textDecoration: "underline", cursor: "pointer", fontSize: "12px", marginBottom: "20px", fontFamily: "monospace" }}>
-                    {showHostLink ? "Show LoK Code Only" : "Generate Full Invite Link"}
-                 </button>
-              )}
-
-              <div style={{ color: "#fff", fontFamily: "monospace", fontSize: "13px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: "#00ff88", boxShadow: "0 0 10px #00ff88", animation: "pulse-dot 1.5s infinite ease-in-out" }} />
-                Waiting for challenger...
-              </div>
-              <button onClick={() => {
-                refs.opp.current = "pvp"; stateRef.current.opponent = "pvp"; startGame(); 
-              }} style={{ width: "100%", padding: "14px", background: "rgba(68, 34, 136, 0.8)", color: "#fff", border: "1px solid #6688ff", cursor: "pointer", fontFamily: "monospace", fontWeight: "bold", borderRadius: "4px", marginBottom: "10px", transition: "all 0.2s" }}>
-                START ANYWAY (LOCAL)
-              </button>
-            </>
-          ) : (
-            <>
-              <div style={{ color: "#aaa", fontFamily: "monospace", fontSize: "12px", marginBottom: "8px" }}>Enter LoK Code or Invite Link:</div>
-              <input
-                type="text"
-                placeholder="LOK-XXXX or https://..."
-                value={joinInput}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  const match = raw.toUpperCase().match(/(LOK-\d{4})/);
-                  if (match) {
-                    setJoinInput(match[1]);
-                  } else {
-                    setJoinInput(raw.toUpperCase());
-                  }
-                }}
-                maxLength={100}
-                spellCheck="false"
-                autoComplete="off"
-                style={{ background: "#000", border: "1px solid #ff4444", padding: "12px", fontSize: joinInput.length > 10 ? "14px" : "24px", color: "#ff8888", fontFamily: "monospace", fontWeight: "bold", textAlign: "center", borderRadius: "4px", marginBottom: "24px", width: "85%", outline: "none", letterSpacing: joinInput.length > 10 ? "0px" : "2px" }}
-              />
-              <button onClick={() => { 
-                if(joinInput.length >= 4) { refs.opp.current = "pvp"; stateRef.current.opponent = "pvp"; startGame(); } 
-              }} style={{ width: "100%", padding: "14px", background: joinInput.length >= 4 ? "rgba(136, 34, 34, 0.8)" : "rgba(51, 51, 51, 0.8)", color: joinInput.length >= 4 ? "#fff" : "#666", border: joinInput.length >= 4 ? "1px solid #ff6666" : "1px solid #444", cursor: joinInput.length >= 4 ? "pointer" : "not-allowed", fontFamily: "monospace", fontWeight: "bold", borderRadius: "4px", marginBottom: "10px", transition: "all 0.2s" }}>
-                CONNECT & BATTLE
-              </button>
-              <button onClick={() => {
-                refs.opp.current = "pvp"; stateRef.current.opponent = "pvp"; startGame(); 
-              }} style={{ width: "100%", padding: "14px", background: "rgba(68, 34, 136, 0.8)", color: "#fff", border: "1px solid #6688ff", cursor: "pointer", fontFamily: "monospace", fontWeight: "bold", borderRadius: "4px", marginBottom: "10px", transition: "all 0.2s" }}>
-                START ANYWAY (LOCAL)
-              </button>
-            </>
-          )}
-
-          <button onClick={() => { 
-            refs.opp.current = "pvp"; stateRef.current.opponent = "pvp"; setTick(t => t + 1); 
-          }} style={{ width: "100%", padding: "10px", background: "transparent", color: "#888", border: "1px solid #444", cursor: "pointer", fontFamily: "monospace", borderRadius: "4px" }}>
-            CANCEL
+          <p style={{ color: "#ccc8dc", lineHeight: 1.6, fontSize: 13, margin: "0 0 20px" }}>
+            This alpha currently supports local solo play. No lobby is created and invite codes do not connect players.
+          </p>
+          <button type="button" onClick={() => {
+            refs.opp.current = "pvp";
+            stateRef.current.opponent = "pvp";
+            startGame();
+          }} style={{ width: "100%", padding: 12, background: "#5947a4", color: "#fff", border: "1px solid #9a86f0", cursor: "pointer", fontFamily: "monospace", fontWeight: "bold", borderRadius: 4, marginBottom: 10 }}>
+            PLAY LOCAL INSTEAD
+          </button>
+          <button type="button" onClick={() => {
+            refs.opp.current = "pvp";
+            stateRef.current.opponent = "pvp";
+            setTick((tick) => tick + 1);
+          }} style={{ width: "100%", padding: 10, background: "transparent", color: "#bcb7ca", border: "1px solid #514d66", cursor: "pointer", fontFamily: "monospace", borderRadius: 4 }}>
+            BACK TO MODES
           </button>
         </div>
       )}
 
       {/* Landscape Enforcement Overlay for Mobile */}
-      {isPortrait && (
+      {isPortrait && !portraitWarningDismissed && (
         <div style={{ position: "absolute", inset: 0, background: "rgba(10, 5, 15, 0.98)", zIndex: 99999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#ffd700", fontFamily: "monospace", textAlign: "center", padding: "20px", backdropFilter: "blur(10px)" }}>
           <div style={{ fontSize: "64px", marginBottom: "20px", transform: "rotate(-90deg)" }}>📱</div>
           <h2 style={{ fontSize: "28px", marginBottom: "10px", textShadow: "0 0 15px rgba(255,215,0,0.6)" }}>ROTATE DEVICE</h2>
           <p style={{ color: "#fff", fontSize: "14px", maxWidth: "80%", lineHeight: 1.5 }}>Kinetic Souls is optimized for Landscape viewing. Please rotate your phone to access the Ultimate Sandbox.</p>
+          <button type="button" onClick={() => setPortraitWarningDismissed(true)} style={{ marginTop: "16px", padding: "10px 16px", color: "#fff", background: "#5947a4", border: "1px solid #9a86f0", borderRadius: "6px", cursor: "pointer", fontFamily: "monospace" }}>CONTINUE IN PORTRAIT</button>
         </div>
       )}
 

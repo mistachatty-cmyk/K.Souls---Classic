@@ -1,26 +1,31 @@
-# Roadmap
+# Kinetic Souls 2 roadmap
 
-## Now (both games)
-- Kinetic Souls (Classic) `classic/`: stable fallback, finished game. Keep fixing bugs only.
-- Kinetic Souls 2 `ks2/`: lead build. Finish verification of XXL, Host/Join, Mobile UI, replay, Boss Rush.
+## MVP target
 
-## Ecosystem (future update for BOTH games)
-- **LokTokens**: earn tokens from matches (kills, wins, Director score) via the shared token economy.
-  Integration guide: Lok-EcoSystsem `LokToken EcoSystem/APP_INTEGRATION_GUIDE.md` (first integration: 616 Survivor).
-- **Passport / profile**: replace the stub "Connect LoK Passport" button with the real flow; show LoK Coins in HUD.
-- **Platform plug-in**: SDK + manifest per `LOK_PLATFORMS.md` (`universe-sdk/`), card/binder sync, public lore on gsix.online.
-- Keep game logic independent of the SDK (adapter module), so Classic and KS2 share one integration.
+Ship a dependable solo alpha with guest play, a clear start/pause/end/rematch loop, accessible settings, V2 / HD as the fresh fighter default, and optional GSix account sync. KS2 keeps its own combat and progression; GSix supplies identity and community surfaces.
 
-## Features documented but not built anywhere
-Weather system, combo counter, weapon mastery tracks, kinetic fusion, ambient soundtrack, challenge tower mode,
-voice commands, modding workshop, networked leaderboards (see `FEATURE_DOCUMENTATION.md` in the local snapshot).
+## Current release slice
 
-## Sprint specs (docs/specs)
-Sprint 01: Snarl Construct, Wilderness Grid, Gravity Well, Exponential Mitosis.
-Sprint 05: Scrap-Mage, Slipstream Corridors, Caustic Core, Director's Marionette (also finishes Hand of God).
-Suggested order: Mitosis, Slipstream, Marionette, Wilderness Grid, Gravity Well, Caustic Core, Snarl Construct, Scrap-Mage.
+- Fighter style options: Block, Classic, V2 / HD, and V3 / Sabre. Guest preference is stored locally; the GSix parent page owns account synchronization.
+- Host/Join is marked unavailable because no online lobby transport is connected. Local modes remain playable.
+- Passport, currency, and title purchasing are not connected to an account service and must not be presented as real purchases.
+- Match records are submitted as client-reported casual alpha data. They are not authoritative rankings and cannot award currency or competitive rewards; account milestones are descriptive progress only.
 
-## Bugs
-- Classic: "pieces fly everywhere when moved" (PC + mobile) — not reproduced, need steps/device.
-- Classic: Hand of God no-op; replay screen never entered.
-- Repo: committed `.env` in K.Souls---Classic main/master (rotate DATABASE_URL); junk root files; stray Vercel projects.
+## Work order
+
+1. Release the settings/account bridge after the API schema is applied to the confirmed database and the GSix and game deployments point to the reviewed sources.
+2. Complete solo-alpha UX and device checks: first-run tutorial, mode selection, input hints, pause, result, rematch, mobile touch, keyboard, portrait fallback, reduced motion, and screen-reader settings.
+3. Validate the casual match-result contract, duplicate submission handling, public mode-filtered records, and account milestones derived from accepted records. Keep this separate from the reward economy until authoritative server-side gameplay validation exists.
+4. Add replay/result review and finish Boss Rush; then take one tested feature slice at a time from `docs/specs/SPRINT_01.md` and `docs/specs/SPRINT_05.md`.
+5. Consider seasonal challenges and multiplayer only after service contracts, abuse controls, and monitoring are ready.
+
+## Later feature candidates
+
+Suggested gameplay order after the solo-alpha release: Mitosis, Slipstream, Marionette, Wilderness Grid, Gravity Well, Caustic Core, Snarl Construct, and Scrap-Mage. Review each design against the current engine before implementation. Weather, weapon mastery, fusion, soundtrack, challenge tower, voice commands, and modding workshop remain ideas rather than shipped features.
+
+## Release blockers
+
+- Confirm and apply the Drizzle schema for account settings and match results to the intended database. The API repo currently uses `pnpm --filter @workspace/db run push`; do not point it at an unverified production database.
+- Correct the Vercel project roots/source links before deployment. Verify API, GSix parent, and KS2 are released in that order.
+- The repository previously tracked a root `.env`; it is now ignored and removed from the index on the working branch. Rotate any credential it contained with its provider and review repository history separately; do not publish secret values.
+- Verify guest play and signed-in account sync in the embedded GSix route after preview deployment.
