@@ -14,21 +14,23 @@ import { createGlassShardPolygons } from "./glass-shards.mjs";
 import { createPaperTearPolygons } from "./paper-shards.mjs";
 import { createStoneChipPolygons } from "./stone-chips.mjs";
 import { createDigitalTearBlocks } from "./digital-tear.mjs";
+import { applyImpact, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField } from "./segment-field.mjs";
 import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
 type Fighter = ReturnType<typeof spawnClassic> | ReturnType<typeof spawnKs2>;
-type Target = { element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; impactDX: number; impactDY: number; lastHitAt: number; boss: boolean; stage: number; material: PageMaterial; fractures: FractureMark[]; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number };
+type Target = { id: number; element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; impactDX: number; impactDY: number; lastHitAt: number; boss: boolean; stage: number; material: PageMaterial; fractures: FractureMark[]; field?: SegmentField; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number };
 type Projectile = { x: number; y: number; previousX: number; previousY: number; vx: number; vy: number; team: number; life: number; type: "laser" | "fireball"; color: string };
 type FloatingText = { x: number; y: number; value: string; color: string; life: number };
 type FractureMark = { segments: ReturnType<typeof createFracturePattern>; color: string; strength: number; createdAt: number };
 type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number; material?: PageMaterial; points?: Array<{ x: number; y: number }> };
+type ArenaChunk = { x: number; y: number; vx: number; vy: number; width: number; height: number; mass: number; angle: number; spin: number; material: PageMaterial; color: string; sourceTargetId: number; ownerTeam: number; hitFighters: Set<number>; secondaryBudget: number; life: number };
 type Shockwave = { x: number; y: number; radius: number; maxRadius: number; life: number; maxLife: number; color: string; width: number };
 type Options = { variant?: Variant };
-type Settings = { npcSide: Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; matchDurationMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean; effectMode: "full" | "low" };
+type Settings = { npcSide: Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; matchDurationMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean; effectMode: "full" | "low"; destructionTempo: "adaptive" | "deep" };
 
-const settings: Settings = { npcSide: 2, motion: "battle", modifier: "none", environment: "bouncy", theme: "synthwave", weapon: "roulette", speed: 1, spawnMs: 2200, matchDurationMs: 120_000, displayHp: true, fighter: "standard", npcEnabled: true, effectMode: "full" };
+const settings: Settings = { npcSide: 2, motion: "battle", modifier: "none", environment: "bouncy", theme: "synthwave", weapon: "roulette", speed: 1, spawnMs: 2200, matchDurationMs: 120_000, displayHp: true, fighter: "standard", npcEnabled: true, effectMode: "full", destructionTempo: "adaptive" };
 const classicThemes = ["classic", "neon", "gameboy", "abyss", "runesite", "gsix", "gilded", "synthwave", "vampire", "oceanic", "infernal", "glitch", "monochrome", "celestial", "overdrive", "comic", "hacker", "rgb_cycle", "neon_abyss", "glassmorphism", "wireframe_matrix", "celestial_forge", "blood_moon", "neon_overdrive", "paper_sketch"];
 const ks2Themes = ["classic", "runesite", "gsix", "neon", "gameboy", "runesite_ultimate", "gilded", "lokmod", "glitch", "rgb_cycle", "comic", "neon_abyss", "cyberpunk", "ethereal", "wasteland", "monochrome", "void", "celestial", "overdrive", "abyss", "hacker", "synthwave", "vampire", "oceanic", "infernal", "glassmorphism", "wireframe_matrix", "celestial_forge", "blood_moon", "neon_overdrive", "paper_sketch", "outrun", "frostbite", "solaris", "deepsea", "liminal", "nebula"];
 const classicNativeModifiers = ["none", "sudden_death", "titans", "shrinking_arena", "vampire_kiss", "necromancy", "magnet", "repel", "lok_bounty"];
@@ -67,8 +69,10 @@ class PageBattle {
   bombs: Drop[] = [];
   floatingTexts: FloatingText[] = [];
   shards: ArenaShard[] = [];
+  chunks: ArenaChunk[] = [];
   shockwaves: Shockwave[] = [];
   targets = new Map<Element, Target>();
+  nextTargetId = 1;
   damage: { x: number; y: number; width: number; height: number }[] = [];
   screenShake = 0;
   running = true;
@@ -83,6 +87,7 @@ class PageBattle {
   teamKOs: Record<Side, number> = { 1: 0, 2: 0 };
   matchNpcSide: Side = settings.npcSide;
   matchDurationMs = settings.matchDurationMs;
+  matchDestructionTempo = settings.destructionTempo;
   remainingMs = this.matchDurationMs;
   matchFinished = false;
   completedRun = false;
@@ -231,16 +236,17 @@ class PageBattle {
 
   scan() {
     const seen = new Set<Element>();
-    const nodes = document.querySelectorAll("main *, article *, section *, header *, footer *, img, video, h1, h2, h3, p, a, button, [data-lok-demo-media]");
+    const nodes = document.querySelectorAll("main *, article *, section *, header *, footer *, img, video, h1, h2, h3, p, a, [data-lok-demo-media]");
     let count = 0;
     for (const element of nodes) {
-      if (count > 1800 || this.host.contains(element) || element.closest("#lok-kinetic-official-page,[data-lok-nondestructible],.lok-choice,[data-lok-sandbox-object]")) continue;
+      if (count > 1800 || this.host.contains(element) || element.closest("#lok-kinetic-official-page,[data-lok-nondestructible],.lok-choice,[data-lok-sandbox-object],button,input,select,textarea,form,[contenteditable],[role=button]")) continue;
       const rect = element.getBoundingClientRect();
       // Break individual pieces of the page, not a full-height layout wrapper.
       if (rect.width < 40 || rect.height < 20 || rect.width > Math.min(innerWidth * 0.9, 780) || rect.height > 480 || rect.width * rect.height > 210000 || rect.bottom < -150 || rect.top > innerHeight + 150) continue;
       count++;
-      if (!this.targets.has(element)) this.targets.set(element, { element, x: 0, y: 0, width: 0, height: 0, damage: 0, destroyed: false, impactX: 0, impactY: 0, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName), fractures: [] });
+      if (!this.targets.has(element)) this.targets.set(element, { id: this.nextTargetId++, element, x: 0, y: 0, width: 0, height: 0, damage: 0, destroyed: false, impactX: 0, impactY: 0, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName), fractures: [] });
       const target = this.targets.get(element)!;
+      if (target.field && (Math.abs(target.field.width - rect.width) > 1 || Math.abs(target.field.height - rect.height) > 1)) target.field = undefined;
       target.x = rect.left + scrollX; target.y = rect.top + scrollY; target.width = rect.width; target.height = rect.height;
       seen.add(element);
     }
@@ -471,7 +477,9 @@ class PageBattle {
       if (fighter.y < minY || fighter.y > maxY) { fighter.vy *= settings.environment === "bouncy" ? -1.15 : -1; fighter.y = Math.max(minY, Math.min(maxY, fighter.y)); }
       for (const target of visibleTargets) {
         if (target.destroyed) continue;
-        const contact = resolveTargetContact(fighter.x, fighter.y, target.x, target.y, target.width, target.height, 15 * fighter.scale);
+        const contact = target.field
+          ? resolveSegmentContact(target.field, fighter.x - target.x, fighter.y - target.y, target.x, target.y, 15 * fighter.scale)
+          : resolveTargetContact(fighter.x, fighter.y, target.x, target.y, target.width, target.height, 15 * fighter.scale);
         if (!contact) continue;
         const incomingX = fighter.vx, incomingY = fighter.vy;
         const normalVelocity = incomingX * contact.normalX + incomingY * contact.normalY;
@@ -484,7 +492,7 @@ class PageBattle {
         fighter.vx = recoil.vx * recoilScale; fighter.vy = recoil.vy * recoilScale;
         // Match the source combat loop's brief hit flash when a fighter lands a hit.
         fighter.flashFrames = Math.max(fighter.flashFrames, 3);
-        this.damageTarget(target, contact.x, contact.y, Math.max(0.6, Math.min(5, impactSpeed * 0.34)), fighter.team === 1 ? "#ff714e" : "#72dfff", impactSpeed, incomingX, incomingY);
+        this.damageTarget(target, contact.x, contact.y, Math.max(0.6, Math.min(5, impactSpeed * 0.34)), fighter.team === 1 ? "#ff714e" : "#72dfff", impactSpeed, incomingX, incomingY, fighter.team);
       }
     }
     for (let i = 0; i < this.fighters.length; i++) {
@@ -520,6 +528,7 @@ class PageBattle {
       }
     }
     this.updateProjectiles(dt, dtMs, visibleTargets);
+    this.stepChunks(dt, dtMs, visibleTargets);
     this.updateEffects(dt, dtMs);
     this.updateBossPulse(visibleTargets, performance.now());
     this.fighters = this.fighters.filter(f => !f.dead);
@@ -545,7 +554,7 @@ class PageBattle {
     element.dataset.lokSandboxObject = "";
     element.style.cssText += `;position:absolute;left:${x}px;top:${y}px;width:${width}px;height:${height}px;object-fit:contain;z-index:2147483643;border:2px solid #93eaff;box-shadow:0 8px 24px #0008;cursor:grab;touch-action:none`;
     document.body.appendChild(element);
-    const target: Target = { element, x, y, width, height, damage: 0, destroyed: false, impactX: x + width / 2, impactY: y + height / 2, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName, true), fractures: [], dynamic: true, vx: (Math.random() - .5) * 3, vy: -2, homeX: x, homeY: y };
+    const target: Target = { id: this.nextTargetId++, element, x, y, width, height, damage: 0, destroyed: false, impactX: x + width / 2, impactY: y + height / 2, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName, true), fractures: [], dynamic: true, vx: (Math.random() - .5) * 3, vy: -2, homeX: x, homeY: y };
     this.targets.set(element, target);
     let drag: { px: number; py: number; x: number; y: number } | null = null;
     element.addEventListener("pointerdown", event => { if (element instanceof HTMLVideoElement && event.offsetY > element.clientHeight - 42) return; drag = { px: event.clientX, py: event.clientY, x: target.x, y: target.y }; element.setPointerCapture(event.pointerId); element.style.cursor = "grabbing"; event.preventDefault(); });
@@ -571,8 +580,9 @@ class PageBattle {
   rebuildScene() {
     this.damage.length = 0;
     this.shards = [];
+    this.chunks = [];
     for (const target of this.targets.values()) {
-      target.damage = 0; target.destroyed = false; target.stage = 0; target.lastHitAt = 0; target.fractures = [];
+      target.damage = 0; target.destroyed = false; target.stage = 0; target.lastHitAt = 0; target.fractures = []; target.field = undefined;
       if (target.dynamic) { target.x = target.homeX ?? target.x; target.y = target.homeY ?? target.y; target.vx = target.vy = 0; const el = target.element as HTMLElement; el.style.display = ""; el.style.left = `${target.x}px`; el.style.top = `${target.y}px`; }
     }
     this.floatingTexts.push({ x: scrollX + innerWidth / 2, y: scrollY + 120, value: "SCENE REBUILT", color: "#9eeaff", life: 1000 });
@@ -629,7 +639,7 @@ class PageBattle {
     const result = scores.player1 === scores.player2 ? "Draw" : scores.player1 > scores.player2 ? "Player 1 wins" : "Player 2 / NPC wins";
     this.completeRun(result);
     this.panel.dataset.view = "result"; this.panel.dataset.open = "true";
-    this.panel.innerHTML = `<h2>Match complete</h2><p><strong>${result}</strong></p><p>Player 1: ${scores.player1} KOs · Player 2 / NPC: ${scores.player2} KOs</p><p>Page targets destroyed: ${this.score}</p><button data-rematch>Rematch · ${this.durationLabel(settings.matchDurationMs)}</button><button data-close-panel>Close panel</button>`;
+    this.panel.innerHTML = `<h2>Match complete</h2><p><strong>${result}</strong></p><p>Player 1: ${scores.player1} KOs · Player 2 / NPC: ${scores.player2} KOs</p><p>Page targets destroyed: ${this.score}</p><p>Destruction: ${this.matchDestructionTempo === "deep" ? "Deep everywhere" : "Adaptive"}</p><button data-rematch>Rematch · ${this.durationLabel(settings.matchDurationMs)}</button><button data-close-panel>Close panel</button>`;
     this.panel.querySelector("[data-rematch]")?.addEventListener("click", () => this.rematch());
     this.panel.querySelector("[data-close-panel]")?.addEventListener("click", () => { this.panel.dataset.open = "false"; });
     this.updateHud();
@@ -639,13 +649,13 @@ class PageBattle {
     if (this.completedRun) return;
     this.completedRun = true;
     const teamScores = this.matchScores();
-    window.dispatchEvent(new CustomEvent("lok:demoday:page-run", { detail: { version: 1, gameKey: "kinetic-souls", variant: this.variant, runId: this.runId, durationMs: this.elapsedMatchMs(), matchDurationMs: this.matchDurationMs, npcSide: this.matchNpcSide, teamScores, result, score: this.score + teamScores.player1 + teamScores.player2, xp: Math.min(200, this.score * 3 + teamScores.player1 + teamScores.player2), completedAt: new Date().toISOString() } }));
+    window.dispatchEvent(new CustomEvent("lok:demoday:page-run", { detail: { version: 1, gameKey: "kinetic-souls", variant: this.variant, runId: this.runId, durationMs: this.elapsedMatchMs(), matchDurationMs: this.matchDurationMs, destructionTempo: this.matchDestructionTempo, npcSide: this.matchNpcSide, teamScores, result, score: this.score + teamScores.player1 + teamScores.player2, xp: Math.min(200, this.score * 3 + teamScores.player1 + teamScores.player2), completedAt: new Date().toISOString() } }));
   }
 
   rematch() {
     this.rebuildScene(); this.fighters = []; this.projectiles = []; this.teamKOs = { 1: 0, 2: 0 }; this.score = 0; this.kills = 0; this.chainBreaks = 0;
-    this.breakCombo = 0; this.comboUntil = 0; this.shockwaves = [];
-    this.matchDurationMs = settings.matchDurationMs; this.remainingMs = this.matchDurationMs; this.matchFinished = false; this.completedRun = false; this.runId = createRunId();
+    this.breakCombo = 0; this.comboUntil = 0; this.shockwaves = []; this.chunks = [];
+    this.matchDurationMs = settings.matchDurationMs; this.matchDestructionTempo = settings.destructionTempo; this.remainingMs = this.matchDurationMs; this.matchFinished = false; this.completedRun = false; this.runId = createRunId();
     this.matchNpcSide = settings.npcSide; this.rightControlUntil = 0; this.paused = false; this.npcAt = performance.now() + 900;
     this.snapshots = []; this.snapshotAt = performance.now(); this.replayIndex = null;
     (this.root.querySelector('[data-action="pause"]') as HTMLElement).textContent = "Pause";
@@ -701,10 +711,11 @@ class PageBattle {
       shot.x += shot.vx * dt; shot.y += shot.vy * dt; shot.life -= dtMs;
       if (shot.life <= 0 || shot.x < 0 || shot.y < 0 || shot.x > document.documentElement.scrollWidth || shot.y > document.documentElement.scrollHeight) continue;
       // A page element between the teams absorbs a shot and becomes destructible.
-      const target = visibleTargets.find(t => !t.destroyed && shot.x >= t.x && shot.x <= t.x + t.width && shot.y >= t.y && shot.y <= t.y + t.height);
+      const target = visibleTargets.find(t => !t.destroyed && shot.x >= t.x && shot.x < t.x + t.width && shot.y >= t.y && shot.y < t.y + t.height
+        && (!t.field || isSegmentSolid(t.field, shot.x - t.x, shot.y - t.y)));
       if (target) {
         const impactColor = shot.color;
-        this.damageTarget(target, shot.x, shot.y, shot.type === "fireball" ? 3.2 : 1.8, impactColor, Math.hypot(shot.vx, shot.vy), shot.vx, shot.vy);
+        this.damageTarget(target, shot.x, shot.y, shot.type === "fireball" ? 3.2 : 1.8, impactColor, Math.hypot(shot.vx, shot.vy), shot.vx, shot.vy, shot.team);
         shot.life = 0;
         continue;
       }
@@ -720,6 +731,46 @@ class PageBattle {
       }
     }
     this.projectiles = this.projectiles.filter(shot => shot.life > 0).slice(-180);
+  }
+
+  stepChunks(dt: number, dtMs: number, targets: Target[]) {
+    const floor = Math.max(innerHeight, document.documentElement.scrollHeight) - 12;
+    for (const chunk of [...this.chunks]) {
+      chunk.vy += 0.26 * dt;
+      chunk.x += chunk.vx * dt; chunk.y += chunk.vy * dt; chunk.angle += chunk.spin * dt;
+      chunk.vx *= 0.993;
+      if (chunk.y + chunk.height / 2 >= floor) {
+        chunk.y = floor - chunk.height / 2;
+        chunk.vy = Math.abs(chunk.vy) > 0.9 ? -chunk.vy * 0.36 : 0;
+        chunk.vx *= 0.76; chunk.spin *= 0.76;
+      }
+      for (const fighter of this.fighters) {
+        if (fighter.dead || chunk.hitFighters.has(fighter.id)) continue;
+        const nearestX = Math.max(chunk.x - chunk.width / 2, Math.min(fighter.x, chunk.x + chunk.width / 2));
+        const nearestY = Math.max(chunk.y - chunk.height / 2, Math.min(fighter.y, chunk.y + chunk.height / 2));
+        if (Math.hypot(fighter.x - nearestX, fighter.y - nearestY) > 13 * fighter.scale) continue;
+        chunk.hitFighters.add(fighter.id);
+        fighter.vx += chunk.vx * Math.min(1.5, chunk.mass / Math.max(0.5, fighter.mass)) * 0.3;
+        fighter.vy += chunk.vy * Math.min(1.5, chunk.mass / Math.max(0.5, fighter.mass)) * 0.3;
+        if (chunk.ownerTeam === fighter.team) continue;
+        const hit = Math.min(3, Math.max(0.5, Math.hypot(chunk.vx, chunk.vy) * chunk.mass * 0.16));
+        if (fighter.shieldHp > 0) fighter.shieldHp -= hit; else fighter.hp -= hit;
+        fighter.flashFrames = Math.max(fighter.flashFrames, 3);
+        if (fighter.hp <= 0) this.awardKo(fighter, chunk.ownerTeam);
+      }
+      if (chunk.secondaryBudget && Math.hypot(chunk.vx, chunk.vy) > 1.5) {
+        const target = targets.find(candidate => candidate.id !== chunk.sourceTargetId && !candidate.destroyed
+          && chunk.x >= candidate.x && chunk.x < candidate.x + candidate.width && chunk.y >= candidate.y && chunk.y < candidate.y + candidate.height
+          && (!candidate.field || isSegmentSolid(candidate.field, chunk.x - candidate.x, chunk.y - candidate.y)));
+        if (target) {
+          chunk.secondaryBudget = 0;
+          this.damageTarget(target, chunk.x, chunk.y, Math.min(2, chunk.mass * 0.55), chunk.color, Math.hypot(chunk.vx, chunk.vy), chunk.vx, chunk.vy, chunk.ownerTeam);
+          chunk.vx *= -0.45; chunk.vy *= -0.45;
+        }
+      }
+      chunk.life -= dtMs;
+    }
+    this.chunks = this.chunks.filter(chunk => chunk.life > 0).slice(-48);
   }
 
   updateEffects(dt: number, dtMs: number) {
@@ -766,12 +817,13 @@ class PageBattle {
     this.screenShake *= Math.pow(0.08, dt);
   }
 
-  damageTarget(target: Target, x: number, y: number, amount: number, color: string, force: number, incomingX = 0, incomingY = -1) {
+  damageTarget(target: Target, x: number, y: number, amount: number, color: string, force: number, incomingX = 0, incomingY = -1, ownerTeam = 0) {
     if (target.destroyed) return;
     const [directionX, directionY] = normalizeImpactDirection(incomingX, incomingY);
     const appliedDamage = materialDamage(amount, target.material);
     target.damage += appliedDamage;
     target.impactX = x; target.impactY = y; target.impactDX = directionX; target.impactDY = directionY; target.lastHitAt = performance.now();
+    this.applyLocalImpact(target, x, y, directionX, directionY, appliedDamage, ownerTeam, color, force);
     this.recordFracture(target, x, y, directionX, directionY, appliedDamage, color);
     if (target.dynamic) { const impulse = impactImpulse(force); target.vx = (target.vx || 0) + directionX * impulse; target.vy = (target.vy || 0) + directionY * impulse; }
     this.shockwaves.push({ x, y, radius: 3, maxRadius: 16 + Math.min(32, force * 2.2), life: 220, maxLife: 220, color, width: 2 + Math.min(3, force * 0.12) });
@@ -803,7 +855,26 @@ class PageBattle {
 
   targetLimit(target: Target) {
     const base = materialDurability(Math.max(2.5, Math.min(9, target.width * target.height / 11000)), target.material);
-    return target.boss ? base * 3 : base;
+    const structuralFactor = this.matchDestructionTempo === "deep" ? 6 : target.width * target.height >= 6500 ? 3 : 1;
+    return (target.boss ? base * 3 : base) * structuralFactor;
+  }
+
+  applyLocalImpact(target: Target, x: number, y: number, directionX: number, directionY: number, damage: number, ownerTeam = 0, color = "#b8ecff", force = 4) {
+    if (!target.field) {
+      const activeFields = [...this.targets.values()].filter(candidate => candidate.field && !candidate.destroyed).length;
+      if (activeFields >= 16) return;
+      target.field = createSegmentField(target.width, target.height, target.material) || undefined;
+    }
+    if (!target.field) return;
+    const result = applyImpact(target.field, { targetId: target.id, x: x - target.x, y: y - target.y, directionX, directionY, damage });
+    for (const piece of result.detachedChunks) {
+      if (this.chunks.length >= 48) break;
+      const impulse = Math.min(12, Math.max(2, force * 0.55));
+      this.chunks.push({ x: target.x + piece.x + piece.width / 2, y: target.y + piece.y + piece.height / 2,
+        vx: directionX * impulse + (Math.random() - 0.5) * 2, vy: directionY * impulse - 1,
+        width: piece.width, height: piece.height, mass: piece.mass, angle: 0, spin: (Math.random() - 0.5) * 0.12,
+        material: target.material, color, sourceTargetId: target.id, ownerTeam, hitFighters: new Set(), secondaryBudget: 1, life: 4000 });
+    }
   }
 
   recordFracture(target: Target, x: number, y: number, directionX: number, directionY: number, amount: number, color: string) {
@@ -836,6 +907,7 @@ class PageBattle {
       const impactX = target.x + target.width / 2, impactY = target.y + target.height / 2;
       const [directionX, directionY] = normalizeImpactDirection(impactX - x, impactY - y);
       target.impactX = impactX; target.impactY = impactY; target.impactDX = directionX; target.impactDY = directionY; target.lastHitAt = performance.now(); target.damage += amount;
+      this.applyLocalImpact(target, impactX, impactY, directionX, directionY, amount);
       this.recordFracture(target, impactX, impactY, directionX, directionY, amount, color);
       if (target.dynamic) { const impulse = impactImpulse(source.boss ? 12 : 7) * (1 - distance / radius); target.vx = (target.vx || 0) + directionX * impulse; target.vy = (target.vy || 0) + directionY * impulse; }
       const stage = Math.min(3, Math.floor(target.damage / this.targetLimit(target) * 4));
@@ -943,7 +1015,7 @@ class PageBattle {
   draw(now: number) {
     const effects = this.visualEffects();
     const ctx = this.ctx; ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    if (this.damage.length) {
+    if (this.damage.length || [...this.targets.values()].some(target => !target.destroyed && target.field?.removedCount)) {
       ctx.save(); ctx.beginPath();
       for (const area of this.damage) {
         if (area.x + area.width < scrollX || area.y + area.height < scrollY || area.x > scrollX + innerWidth || area.y > scrollY + innerHeight) continue;
@@ -951,10 +1023,16 @@ class PageBattle {
       }
       for (const target of this.targets.values()) {
         if (target.destroyed || target.damage <= 0) continue;
-        const r = 5 + Math.min(24, target.damage * 2.6);
-        const x = target.impactX - scrollX, y = target.impactY - scrollY;
-        ctx.moveTo(x + r, y);
-        ctx.arc(x, y, r, 0, Math.PI * 2);
+        if (target.field) for (const cell of segmentOpeningRects(target.field)) {
+          const x = target.x + cell.x - scrollX, y = target.y + cell.y - scrollY;
+          if (x + cell.width >= 0 && x <= innerWidth && y + cell.height >= 0 && y <= innerHeight) ctx.rect(x, y, cell.width, cell.height);
+        }
+        if (!target.field) {
+          const r = 5 + Math.min(24, target.damage * 2.6);
+          const x = target.impactX - scrollX, y = target.impactY - scrollY;
+          ctx.moveTo(x + r, y);
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+        }
       }
       ctx.clip();
       const sceneTime = effects.animated ? now : 0;
@@ -1120,6 +1198,18 @@ class PageBattle {
       }
     }
     for (const state of restore) { state.fighter.x = state.x; state.fighter.y = state.y; state.fighter.angle = state.angle; }
+    if (effects.animated) for (const chunk of this.chunks) {
+      if (chunk.x + chunk.width < scrollX || chunk.x - chunk.width > scrollX + innerWidth || chunk.y + chunk.height < scrollY || chunk.y - chunk.height > scrollY + innerHeight) continue;
+      ctx.save(); ctx.translate(chunk.x, chunk.y); ctx.rotate(chunk.angle);
+      const depth = chunk.material === "stone" ? 5 : chunk.material === "glass" ? 3 : 2;
+      ctx.fillStyle = "rgba(2,5,14,.28)"; ctx.fillRect(-chunk.width / 2 + 5, -chunk.height / 2 + 7, chunk.width, chunk.height);
+      ctx.fillStyle = chunk.material === "paper" ? "#e9deca" : chunk.material === "stone" ? "#747f91" : chunk.material === "glass" ? "#a6e7f2" : "#1c3044";
+      ctx.fillRect(-chunk.width / 2, -chunk.height / 2, chunk.width, chunk.height);
+      ctx.fillStyle = this.variant === "classic" ? "#ad5835" : "#61509f";
+      ctx.fillRect(-chunk.width / 2, chunk.height / 2 - depth, chunk.width, depth);
+      ctx.strokeStyle = chunk.color; ctx.lineWidth = 1; ctx.strokeRect(-chunk.width / 2, -chunk.height / 2, chunk.width, chunk.height);
+      ctx.restore();
+    }
     for (const shard of this.shards) {
       if (!effects.animated || shard.x < scrollX - 30 || shard.x > scrollX + innerWidth + 30 || shard.y < scrollY - 30 || shard.y > scrollY + innerHeight + 30) continue;
       ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, shard.life / shard.maxLife)); ctx.translate(shard.x, shard.y); ctx.rotate(shard.angle);
@@ -1241,7 +1331,7 @@ class PageBattle {
       const modeNote = this.variant === "classic" ? "The Classic catalog is preserved; Gravity Well, Time Distortion, and Chaos Vortex are clearly labeled page-mode adaptations." : "The KS2 theme menu and arena environment controls match the live game; solar flares, magnetic fields, void storm, and three extra force modifiers are labeled page-mode adaptations.";
       this.panel.innerHTML = `<h2>LoK Game Modifiers · M</h2><p class="notice">${modeNote} Fighter data comes from this version's Bestiary. Full-arena-only controls stay linked to the standalone game.</p>${select("Movement", "motion", ["battle", "dvd"])}${select("Combat modifier", "modifier", modifierChoices)}${select("Environment", "environment", environmentChoices)}${select("Weapon loadout", "weapon", weapons)}${select("Arena theme", "theme", themeChoices)}${select("Spawn fighter", "fighter", (this.variant === "classic" ? classicBestiary : ks2Bestiary).filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<label>Fighter speed<input data-setting="speed" type="range" min="0.5" max="3" step="0.1" value="${settings.speed}"></label><p class="notice"><a href="https://demo.gsix.online/games/kinetic-${this.variant}" target="_blank" rel="noopener">Open the full ${this.variant === "classic" ? "Classic" : "KS2"} arena ↗</a></p>`;
     } else {
-      this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC</button><p class="notice">Tap A/L or a team control to launch. Hold to keep launching; pressing the NPC side takes control for 12 seconds.</p>${select("NPC side · next match", "npcSide", pageSides)}<p class="notice">Player 1 launches from the opposite side. This change applies next match.</p>${select("Match duration", "matchDurationMs", matchDurations)}<p class="notice">The selected length applies to your next match. This match continues with its current timer.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label>${select("Visual effects", "effectMode", ["full", "low"])}<p class="notice">Low reduces particles and screen shake. Reduced Motion disables shake and animated debris automatically.</p><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
+      this.panel.innerHTML = `<h2>Settings</h2><label>Version<select data-version><option value="classic" ${this.variant === "classic" ? "selected" : ""}>Classic (1)</option><option value="ks2" ${this.variant === "ks2" ? "selected" : ""}>KS2 (alpha)</option></select></label>${npc}<button data-resume-npc>Resume NPC</button><p class="notice">Tap A/L or a team control to launch. Hold to keep launching; pressing the NPC side takes control for 12 seconds.</p>${select("NPC side · next match", "npcSide", pageSides)}<p class="notice">Player 1 launches from the opposite side. This change applies next match.</p>${select("Match duration", "matchDurationMs", matchDurations)}${select("Destruction · next match", "destructionTempo", ["adaptive", "deep"])}<p class="notice">Adaptive breaks small pieces quickly and carves larger panels. Deep everywhere carves every eligible target longer. Both keep the page reversible.</p><p class="notice">The selected length and destruction tempo apply to your next match.</p><label>NPC interval<input data-setting="spawnMs" type="range" min="1000" max="6000" step="250" value="${settings.spawnMs}"></label><label>Health bars<input data-setting="displayHp" type="checkbox" ${settings.displayHp ? "checked" : ""}></label>${select("Visual effects", "effectMode", ["full", "low"])}<p class="notice">Low reduces particles and screen shake. Reduced Motion disables shake and animated debris automatically.</p><p class="notice">Fighters stay at their document positions while you scroll. Newly added page elements join the arena.</p>`;
     }
     if (name === "settings") this.updateNpcButton();
     this.panel.querySelectorAll("[data-setting]").forEach(input => input.addEventListener("change", event => {

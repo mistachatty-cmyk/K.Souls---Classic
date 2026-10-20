@@ -1,0 +1,13 @@
+import type { PageMaterial } from "./materials.mjs";
+export type SegmentCell = { stress: number; removed: boolean };
+export type SegmentField = { width: number; height: number; material: PageMaterial; cellSize: number; maxCells: number; cols: number; rows: number; removedCount: number; cells: Map<number, SegmentCell> };
+export type SegmentRect = { x: number; y: number; width: number; height: number };
+export type DetachedChunk = SegmentRect & { mass: number; cells: SegmentRect[] };
+export type ImpactInput = { targetId: number; x: number; y: number; directionX: number; directionY: number; damage: number };
+export const DESTRUCTION_WORLD_VERSION: 1;
+export function applyImpact(field: SegmentField | null, impact: ImpactInput): { version: 1; targetId: number; removedCells: SegmentRect[]; openings: SegmentRect[]; detachedChunks: DetachedChunk[]; wholeTargetBreak: boolean };
+export function createSegmentField(width: number, height: number, material: PageMaterial, cellSize?: number, maxCells?: number): SegmentField | null;
+export function applySegmentImpact(field: SegmentField | null, x: number, y: number, directionX: number, directionY: number, damage: number): { removedCells: SegmentRect[] };
+export function isSegmentSolid(field: SegmentField | null, x: number, y: number): boolean;
+export function segmentOpeningRects(field: SegmentField | null): SegmentRect[];
+export function resolveSegmentContact(field: SegmentField | null, localX: number, localY: number, targetX: number, targetY: number, radius: number): { x: number; y: number; normalX: number; normalY: number; fighterX: number; fighterY: number } | null;
