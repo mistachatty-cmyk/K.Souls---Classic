@@ -13,6 +13,7 @@ import { createFracturePattern } from "./fracture.mjs";
 import { createGlassShardPolygons } from "./glass-shards.mjs";
 import { createPaperTearPolygons } from "./paper-shards.mjs";
 import { createStoneChipPolygons } from "./stone-chips.mjs";
+import { createDigitalTearBlocks } from "./digital-tear.mjs";
 import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
@@ -1052,6 +1053,25 @@ class PageBattle {
           ctx.globalAlpha *= 0.52; ctx.strokeStyle = "rgba(226,233,241,.82)"; ctx.lineWidth = 0.65;
           ctx.beginPath(); ctx.moveTo(x - seamX / seamNorm * seamLength * 0.72, y - seamY / seamNorm * seamLength * 0.72 - 1);
           ctx.lineTo(x + seamX / seamNorm * seamLength * 0.6, y + seamY / seamNorm * seamLength * 0.6 - 1); ctx.stroke();
+        }
+        if (target.material === "digital") {
+          const seed = (Math.imul(Math.floor(target.impactX * 13) ^ Math.floor(target.impactY * 23) ^ Math.round(target.damage * 109), 3266489917) ^ target.stage) >>> 0;
+          const count = Math.max(3, Math.round((4 + target.stage) * effects.particles));
+          const blocks = createDigitalTearBlocks(target.width, target.height, target.impactX - target.x, target.impactY - target.y, count, seed);
+          const accent = this.variant === "classic" ? "255,177,78" : "187,145,255";
+          const age = Math.max(0, now - target.lastHitAt);
+          for (let i = 0; i < blocks.length; i++) {
+            const block = blocks[i];
+            ctx.globalAlpha = 0.18 + strength * 0.12;
+            ctx.fillStyle = i % 2 ? "rgba(9,12,20,.86)" : `rgba(${accent},.72)`;
+            ctx.fillRect(target.x + block.x, target.y + block.y, block.width, block.height);
+            if (effects.animated && age < 240 && i % 2 === 0) {
+              const tearOffset = Math.min(5, Math.max(1, block.height + 1));
+              ctx.globalAlpha = 0.24 * (1 - age / 240);
+              ctx.fillStyle = `rgba(${accent},.9)`;
+              ctx.fillRect(target.x + block.x, target.y + block.y + tearOffset, block.width, 1);
+            }
+          }
         }
         for (const fracture of target.fractures) {
           const fresh = effects.animated ? Math.max(0, 1 - (now - fracture.createdAt) / 180) : 0;
