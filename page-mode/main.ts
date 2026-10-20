@@ -236,10 +236,11 @@ class PageBattle {
 
   scan() {
     const seen = new Set<Element>();
-    const nodes = document.querySelectorAll("main *, article *, section *, header *, footer *, img, video, h1, h2, h3, p, a, [data-lok-demo-media]");
+    const nodes = document.querySelectorAll("main *, article *, section *, header *, footer *, img, video, h1, h2, h3, p, [data-lok-demo-media]");
     let count = 0;
     for (const element of nodes) {
-      if (count > 1800 || this.host.contains(element) || element.closest("#lok-kinetic-official-page,[data-lok-nondestructible],.lok-choice,[data-lok-sandbox-object],button,input,select,textarea,form,[contenteditable],[role=button]")) continue;
+      if (count > 1800 || this.host.contains(element) || element.closest("#lok-kinetic-official-page,[data-lok-nondestructible],.lok-choice,[data-lok-sandbox-object],a,button,input,select,textarea,form,[contenteditable],[role=button]")
+        || element.querySelector("a,button,input,select,textarea,form,[contenteditable],[role=button],[data-lok-nondestructible]")) continue;
       const rect = element.getBoundingClientRect();
       // Break individual pieces of the page, not a full-height layout wrapper.
       if (rect.width < 40 || rect.height < 20 || rect.width > Math.min(innerWidth * 0.9, 780) || rect.height > 480 || rect.width * rect.height > 210000 || rect.bottom < -150 || rect.top > innerHeight + 150) continue;
