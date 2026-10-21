@@ -6,7 +6,9 @@ const finite = (...values) => values.every(Number.isFinite);
 /** Sparse, target-local solid-cell field. Unallocated cells are solid. */
 export function createSegmentField(width, height, material, cellSize = 16, maxCells = 192) {
   if (!finite(width, height, cellSize, maxCells) || width <= 0 || height <= 0 || cellSize < 4 || maxCells < 1) return null;
-  return { width, height, material, cellSize, maxCells: Math.floor(maxCells), cols: Math.ceil(width / cellSize), rows: Math.ceil(height / cellSize), removedCount: 0, cells: new Map() };
+  const cols = Math.ceil(width / cellSize), rows = Math.ceil(height / cellSize);
+  if (cols * rows > 4096) return null;
+  return { width, height, material, cellSize, maxCells: Math.min(192, Math.floor(maxCells)), cols, rows, removedCount: 0, cells: new Map() };
 }
 
 function cellRect(field, col, row) {
@@ -53,12 +55,52 @@ export function applySegmentImpact(field, x, y, directionX, directionY, damage) 
 
 export const DESTRUCTION_WORLD_VERSION = 1;
 
+function detachUnsupportedCells(field) {
+  if (field.removedCount < 4) return [];
+  const total = field.cols * field.rows, visited = new Uint8Array(total), queue = [];
+  const solid = key => !field.cells.get(key)?.removed;
+  for (let key = 0; key < total; key++) {
+    const col = key % field.cols, row = Math.floor(key / field.cols);
+    if (col !== 0 && row !== 0 && col !== field.cols - 1 && row !== field.rows - 1) continue;
+    if (solid(key) && !visited[key]) { visited[key] = 1; queue.push(key); }
+  }
+  const neighbors = key => {
+    const col = key % field.cols, row = Math.floor(key / field.cols), result = [];
+    if (col > 0) result.push(key - 1);
+    if (col + 1 < field.cols) result.push(key + 1);
+    if (row > 0) result.push(key - field.cols);
+    if (row + 1 < field.rows) result.push(key + field.cols);
+    return result;
+  };
+  for (let cursor = 0; cursor < queue.length; cursor++) for (const next of neighbors(queue[cursor])) {
+    if (visited[next] || !solid(next)) continue;
+    visited[next] = 1; queue.push(next);
+  }
+  const detached = [];
+  for (let key = 0; key < total; key++) {
+    if (visited[key] || !solid(key)) continue;
+    const component = [key]; visited[key] = 1;
+    for (let cursor = 0; cursor < component.length; cursor++) for (const next of neighbors(component[cursor])) {
+      if (visited[next] || !solid(next)) continue;
+      visited[next] = 1; component.push(next);
+    }
+    const missing = component.filter(id => !field.cells.has(id)).length;
+    if (field.cells.size + missing > field.maxCells) continue;
+    for (const id of component) {
+      field.cells.set(id, { stress: 0, removed: true }); field.removedCount++;
+      detached.push(cellRect(field, id % field.cols, Math.floor(id / field.cols)));
+    }
+  }
+  return detached;
+}
+
 /** Versioned boundary between game combat and page geometry. Coordinates are target-local. */
 export function applyImpact(field, impact) {
   const empty = { version: DESTRUCTION_WORLD_VERSION, targetId: impact?.targetId ?? 0, removedCells: [], openings: [], detachedChunks: [], wholeTargetBreak: false };
   if (!field || !impact || !Number.isSafeInteger(impact.targetId) || impact.targetId < 1) return empty;
   const removedCells = applySegmentImpact(field, impact.x, impact.y, impact.directionX, impact.directionY, impact.damage).removedCells;
   if (!removedCells.length) return empty;
+  removedCells.push(...detachUnsupportedCells(field));
   const remaining = new Set(removedCells.map(cell => `${cell.x}:${cell.y}`));
   const detachedChunks = [];
   for (const first of removedCells) {

@@ -28,6 +28,7 @@ test("fighter and projectile queries agree with the visible opening", () => {
 
 test("damage field stays bounded and rejects malformed geometry", () => {
   assert.equal(createSegmentField(NaN, 64, "paper"), null);
+  assert.equal(createSegmentField(100000, 100000, "digital"), null);
   const field = createSegmentField(1000, 1000, "stone", 16, 5);
   assert.ok(field);
   for (let x = 8; x < 300; x += 16) applySegmentImpact(field, x, 8, 1, 0, 9);
@@ -47,4 +48,25 @@ test("versioned impact returns clustered physical pieces and rejects invalid inp
   assert.ok(result.detachedChunks.length <= 4);
   assert.equal(result.detachedChunks.reduce((sum, chunk) => sum + chunk.cells.length, 0), result.removedCells.length);
   assert.ok(result.detachedChunks.every(chunk => chunk.mass > 0 && chunk.width > 0 && chunk.height > 0));
+});
+
+test("a surviving island detaches only when cuts separate it from every edge", () => {
+  const field = createSegmentField(48, 48, "stone");
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
+    if ((row === 1 && col === 1) || (row === 2 && col === 2)) continue;
+    field.cells.set(row * field.cols + col, { stress: 3, removed: true }); field.removedCount++;
+  }
+  assert.equal(isSegmentSolid(field, 24, 24), true);
+  const result = applyImpact(field, { targetId: 1, x: 40, y: 40, directionX: 1, directionY: 0, damage: 3 });
+  assert.equal(isSegmentSolid(field, 24, 24), false);
+  assert.ok(result.removedCells.some(cell => cell.x === 16 && cell.y === 16));
+  assert.ok(result.detachedChunks.some(chunk => chunk.cells.some(cell => cell.x === 16 && cell.y === 16)));
+  const capped = createSegmentField(48, 48, "stone", 16, 8);
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
+    if ((row === 1 && col === 1) || (row === 2 && col === 2)) continue;
+    capped.cells.set(row * capped.cols + col, { stress: 3, removed: true }); capped.removedCount++;
+  }
+  applyImpact(capped, { targetId: 1, x: 40, y: 40, directionX: 1, directionY: 0, damage: 3 });
+  assert.equal(capped.cells.size, 8);
+  assert.equal(isSegmentSolid(capped, 24, 24), true);
 });
