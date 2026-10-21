@@ -20,12 +20,13 @@ import { captureDestructionState, snapshotOpeningRects, type DestructionState } 
 import { containedMediaPlacement, mediaMaskAlpha } from "./owned-media-fragments.mjs";
 import { captureVideoTimes, pauseVideos, resumeVideos, seekVideos, type VideoTime } from "./video-timeline.mjs";
 import { captureSceneField, restoreSceneField, savedVideoTime } from "./scene-state.mjs";
+import { creatorFloorTop, creatorStageBottom } from "./creator-stage.mjs";
 import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
 type Side = 1 | 2;
 type Fighter = ReturnType<typeof spawnClassic> | ReturnType<typeof spawnKs2>;
-type Target = { id: number; element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; impactDX: number; impactDY: number; lastHitAt: number; boss: boolean; stage: number; material: PageMaterial; fractures: FractureMark[]; field?: SegmentField; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number };
+type Target = { id: number; element: Element; x: number; y: number; width: number; height: number; damage: number; destroyed: boolean; impactX: number; impactY: number; impactDX: number; impactDY: number; lastHitAt: number; boss: boolean; stage: number; material: PageMaterial; fractures: FractureMark[]; field?: SegmentField; dynamic?: boolean; vx?: number; vy?: number; homeX?: number; homeY?: number; stageFloorY?: number; homeStageFloorY?: number };
 type Projectile = { x: number; y: number; previousX: number; previousY: number; vx: number; vy: number; team: number; life: number; type: "laser" | "fireball"; color: string };
 type FloatingText = { x: number; y: number; value: string; color: string; life: number };
 type FractureMark = { segments: ReturnType<typeof createFracturePattern>; color: string; strength: number; createdAt: number };
@@ -553,7 +554,7 @@ class PageBattle {
       target.vy = (target.vy || 0) + 0.18 * dt;
       target.x += (target.vx || 0) * dt; target.y += (target.vy || 0) * dt;
       target.vx = (target.vx || 0) * 0.992;
-      const floor = Math.max(innerHeight, document.documentElement.scrollHeight) - target.height - 8;
+      const floor = creatorFloorTop(target.stageFloorY ?? Infinity, target.height, Math.max(innerHeight, document.documentElement.scrollHeight));
       if (target.y > floor) { target.y = floor; target.vy = -(target.vy || 0) * 0.56; target.vx = (target.vx || 0) * 0.82; }
       const maxX = Math.max(innerWidth, document.documentElement.scrollWidth) - target.width - 8;
       if (target.x < 8 || target.x > maxX) { target.x = Math.max(8, Math.min(maxX, target.x)); target.vx = -(target.vx || 0) * 0.68; }
@@ -567,12 +568,13 @@ class PageBattle {
     element.dataset.lokSandboxObject = "";
     element.style.cssText += `;position:absolute;left:${x}px;top:${y}px;width:${width}px;height:${height}px;object-fit:contain;z-index:2147483643;border:2px solid #93eaff;box-shadow:0 8px 24px #0008;cursor:grab;touch-action:none`;
     document.body.appendChild(element);
-    const target: Target = { id: this.nextTargetId++, element, x, y, width, height, damage: 0, destroyed: false, impactX: x + width / 2, impactY: y + height / 2, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName, true), fractures: [], dynamic: true, vx: (Math.random() - .5) * 3, vy: -2, homeX: x, homeY: y };
+    const stageFloorY = creatorStageBottom(y, height, scrollY + innerHeight, Math.max(innerHeight, document.documentElement.scrollHeight));
+    const target: Target = { id: this.nextTargetId++, element, x, y, width, height, damage: 0, destroyed: false, impactX: x + width / 2, impactY: y + height / 2, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName, true), fractures: [], dynamic: true, vx: (Math.random() - .5) * 3, vy: -2, homeX: x, homeY: y, stageFloorY, homeStageFloorY: stageFloorY };
     this.targets.set(element, target);
     let drag: { px: number; py: number; x: number; y: number } | null = null;
     element.addEventListener("pointerdown", event => { if (element instanceof HTMLVideoElement && event.offsetY > element.clientHeight - 42) return; drag = { px: event.clientX, py: event.clientY, x: target.x, y: target.y }; element.setPointerCapture(event.pointerId); element.style.cursor = "grabbing"; event.preventDefault(); });
     element.addEventListener("pointermove", event => { if (!drag) return; target.x = drag.x + event.clientX - drag.px; target.y = drag.y + event.clientY - drag.py; target.vx = target.vy = 0; element.style.left = `${target.x}px`; element.style.top = `${target.y}px`; });
-    const release = () => { drag = null; element.style.cursor = "grab"; };
+    const release = () => { if (drag) target.stageFloorY = creatorStageBottom(target.y, target.height, scrollY + innerHeight, Math.max(innerHeight, document.documentElement.scrollHeight)); drag = null; element.style.cursor = "grab"; };
     element.addEventListener("pointerup", release); element.addEventListener("pointercancel", release);
     this.scanAt = 0;
     return target;
@@ -586,6 +588,7 @@ class PageBattle {
       tile.style.cssText = `display:grid;place-items:center;background:linear-gradient(135deg,${colors[i % colors.length]},#101522);color:white;font:800 12px system-ui;text-shadow:0 1px 5px #000;border-radius:${i % 2 ? "4px" : "50%"};`;
       const target = this.addSandboxObject(tile, i % 3 === 0 ? 116 : 152, i % 3 === 0 ? 88 : 108);
       target.x += (i % 4) * 174; target.y += Math.floor(i / 4) * 128; target.homeX = target.x; target.homeY = target.y;
+      target.stageFloorY = creatorStageBottom(target.y, target.height, scrollY + innerHeight, Math.max(innerHeight, document.documentElement.scrollHeight)); target.homeStageFloorY = target.stageFloorY;
       tile.style.left = `${target.x}px`; tile.style.top = `${target.y}px`;
     }
   }
@@ -597,7 +600,7 @@ class PageBattle {
     this.chunks = [];
     for (const target of this.targets.values()) {
       target.damage = 0; target.destroyed = false; target.stage = 0; target.lastHitAt = 0; target.fractures = []; target.field = undefined;
-      if (target.dynamic) { target.x = target.homeX ?? target.x; target.y = target.homeY ?? target.y; target.vx = target.vy = 0; const el = target.element as HTMLElement; el.style.display = ""; el.style.visibility = ""; el.style.maskImage = ""; el.style.removeProperty("-webkit-mask-image"); el.style.left = `${target.x}px`; el.style.top = `${target.y}px`; }
+      if (target.dynamic) { target.x = target.homeX ?? target.x; target.y = target.homeY ?? target.y; target.stageFloorY = target.homeStageFloorY ?? target.stageFloorY; target.vx = target.vy = 0; const el = target.element as HTMLElement; el.style.display = ""; el.style.visibility = ""; el.style.maskImage = ""; el.style.removeProperty("-webkit-mask-image"); el.style.left = `${target.x}px`; el.style.top = `${target.y}px`; }
     }
     this.floatingTexts.push({ x: scrollX + innerWidth / 2, y: scrollY + 120, value: "SCENE REBUILT", color: "#9eeaff", life: 1000 });
   }
@@ -607,7 +610,7 @@ class PageBattle {
       const el = t.element as HTMLElement; let blob: Blob | undefined;
       const src = (el as HTMLImageElement | HTMLVideoElement).src;
       if (src?.startsWith("blob:")) { try { blob = await (await fetch(src)).blob(); } catch {} }
-      return { x: t.x, y: t.y, homeX: t.homeX, homeY: t.homeY, width: t.width, height: t.height, damage: t.damage, destroyed: t.destroyed, stage: t.stage,
+      return { x: t.x, y: t.y, homeX: t.homeX, homeY: t.homeY, stageFloorY: t.stageFloorY, homeStageFloorY: t.homeStageFloorY, width: t.width, height: t.height, damage: t.damage, destroyed: t.destroyed, stage: t.stage,
         field: captureSceneField(t.field), videoTime: el instanceof HTMLVideoElement ? savedVideoTime(el.currentTime, el.duration) : undefined,
         kind: el.tagName.toLowerCase(), text: el.tagName === "DIV" ? el.textContent : "", color: el.tagName === "DIV" ? el.style.background : "", blob, name: el.getAttribute("aria-label") || el.getAttribute("alt") || "Sandbox object" };
     }));
@@ -632,7 +635,11 @@ class PageBattle {
       let el: HTMLElement;
       if (obj.blob && (obj.kind === "img" || obj.kind === "video")) { el = document.createElement(obj.kind) as HTMLElement; (el as HTMLImageElement | HTMLVideoElement).src = URL.createObjectURL(obj.blob); if (obj.kind === "video") { const v = el as HTMLVideoElement; this.activeVideo = v; v.controls = true; v.muted = true; v.loop = true; v.playsInline = true; v.addEventListener("loadedmetadata", () => { v.currentTime = savedVideoTime(obj.videoTime, v.duration); this.syncVideoTimeline(); if (!this.paused) void v.play().catch(() => {}); }, { once: true }); v.addEventListener("timeupdate", () => this.syncVideoTimeline()); } }
       else { el = document.createElement("div"); el.textContent = obj.text || obj.name; el.style.cssText = `display:grid;place-items:center;background:${obj.color || "linear-gradient(135deg,#46789b,#101522)"};color:white;font:800 12px system-ui`; }
-      const t = this.addSandboxObject(el, obj.width, obj.height); t.x = obj.x; t.y = obj.y; t.homeX = obj.homeX; t.homeY = obj.homeY; t.damage = obj.damage; t.destroyed = obj.destroyed; t.stage = Number.isInteger(obj.stage) ? Math.max(0, Math.min(3, obj.stage)) : 0;
+      const t = this.addSandboxObject(el, obj.width, obj.height); t.x = obj.x; t.y = obj.y; t.homeX = obj.homeX; t.homeY = obj.homeY;
+      const pageBottom = Math.max(innerHeight, document.documentElement.scrollHeight);
+      t.stageFloorY = Number.isFinite(obj.stageFloorY) && obj.stageFloorY > 0 ? obj.stageFloorY : creatorStageBottom(t.y, t.height, scrollY + innerHeight, pageBottom);
+      t.homeStageFloorY = Number.isFinite(obj.homeStageFloorY) && obj.homeStageFloorY > 0 ? obj.homeStageFloorY : creatorStageBottom(t.homeY ?? t.y, t.height, scrollY + innerHeight, pageBottom);
+      t.damage = obj.damage; t.destroyed = obj.destroyed; t.stage = Number.isInteger(obj.stage) ? Math.max(0, Math.min(3, obj.stage)) : 0;
       t.field = restoreSceneField(obj.field, t.width, t.height, t.material) || undefined;
       el.style.left = `${t.x}px`; el.style.top = `${t.y}px`; if (t.destroyed) el.style.display = "none"; else if (t.field?.removedCount) this.updateDynamicMask(t);
     }
