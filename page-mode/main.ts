@@ -19,6 +19,7 @@ import { sortTargetsFrontFirst, underlyingTargetForPoint } from "./layers.mjs";
 import { captureDestructionState, snapshotOpeningRects, type DestructionState } from "./destruction-replay.mjs";
 import { containedMediaPlacement, mediaMaskAlpha } from "./owned-media-fragments.mjs";
 import { captureVideoTimes, pauseVideos, resumeVideos, seekVideos, type VideoTime } from "./video-timeline.mjs";
+import { captureSceneField, restoreSceneField, savedVideoTime } from "./scene-state.mjs";
 import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
@@ -606,7 +607,9 @@ class PageBattle {
       const el = t.element as HTMLElement; let blob: Blob | undefined;
       const src = (el as HTMLImageElement | HTMLVideoElement).src;
       if (src?.startsWith("blob:")) { try { blob = await (await fetch(src)).blob(); } catch {} }
-      return { x: t.x, y: t.y, homeX: t.homeX, homeY: t.homeY, width: t.width, height: t.height, damage: t.damage, destroyed: t.destroyed, kind: el.tagName.toLowerCase(), text: el.tagName === "DIV" ? el.textContent : "", color: el.tagName === "DIV" ? el.style.background : "", blob, name: el.getAttribute("aria-label") || el.getAttribute("alt") || "Sandbox object" };
+      return { x: t.x, y: t.y, homeX: t.homeX, homeY: t.homeY, width: t.width, height: t.height, damage: t.damage, destroyed: t.destroyed, stage: t.stage,
+        field: captureSceneField(t.field), videoTime: el instanceof HTMLVideoElement ? savedVideoTime(el.currentTime, el.duration) : undefined,
+        kind: el.tagName.toLowerCase(), text: el.tagName === "DIV" ? el.textContent : "", color: el.tagName === "DIV" ? el.style.background : "", blob, name: el.getAttribute("aria-label") || el.getAttribute("alt") || "Sandbox object" };
     }));
     const db = await new Promise<IDBDatabase>((resolve, reject) => { const req = indexedDB.open("lok-demo-day-projects", 1); req.onupgradeneeded = () => req.result.createObjectStore("scenes", { keyPath: "id" }); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
     const id = `kinetic-${Date.now()}`;
@@ -619,13 +622,19 @@ class PageBattle {
     const records = await new Promise<any[]>((resolve, reject) => { const req = db.transaction("scenes", "readonly").objectStore("scenes").getAll(); req.onsuccess = () => resolve(req.result.filter((v: any) => v.kind === "kinetic-scene")); req.onerror = () => reject(req.error); }); db.close();
     const chosen = records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!chosen) { this.floatingTexts.push({ x: scrollX + innerWidth / 2, y: scrollY + 100, value: "NO SAVED SCENES", color: "#ffd479", life: 1100 }); return; }
+    const replacedIds = new Set([...this.targets.values()].filter(target => target.dynamic).map(target => target.id));
+    this.damage = this.damage.filter(area => !replacedIds.has(area.targetId));
+    this.chunks = this.chunks.filter(chunk => !replacedIds.has(chunk.sourceTargetId));
     for (const t of this.targets.values()) if (t.dynamic) { this.targets.delete(t.element); const media = t.element as HTMLImageElement | HTMLVideoElement; if (media instanceof HTMLVideoElement) media.pause(); if (media.src?.startsWith("blob:")) URL.revokeObjectURL(media.src); t.element.remove(); }
     this.activeVideo = null;
+    this.replayIndex = null; this.snapshots = []; this.snapshotAt = performance.now();
     for (const obj of chosen.objects) {
       let el: HTMLElement;
-      if (obj.blob && (obj.kind === "img" || obj.kind === "video")) { el = document.createElement(obj.kind) as HTMLElement; (el as HTMLImageElement | HTMLVideoElement).src = URL.createObjectURL(obj.blob); if (obj.kind === "video") { const v = el as HTMLVideoElement; this.activeVideo = v; v.controls = true; v.muted = true; v.loop = true; v.playsInline = true; v.addEventListener("loadedmetadata", () => this.syncVideoTimeline()); v.addEventListener("timeupdate", () => this.syncVideoTimeline()); } }
+      if (obj.blob && (obj.kind === "img" || obj.kind === "video")) { el = document.createElement(obj.kind) as HTMLElement; (el as HTMLImageElement | HTMLVideoElement).src = URL.createObjectURL(obj.blob); if (obj.kind === "video") { const v = el as HTMLVideoElement; this.activeVideo = v; v.controls = true; v.muted = true; v.loop = true; v.playsInline = true; v.addEventListener("loadedmetadata", () => { v.currentTime = savedVideoTime(obj.videoTime, v.duration); this.syncVideoTimeline(); if (!this.paused) void v.play().catch(() => {}); }, { once: true }); v.addEventListener("timeupdate", () => this.syncVideoTimeline()); } }
       else { el = document.createElement("div"); el.textContent = obj.text || obj.name; el.style.cssText = `display:grid;place-items:center;background:${obj.color || "linear-gradient(135deg,#46789b,#101522)"};color:white;font:800 12px system-ui`; }
-      const t = this.addSandboxObject(el, obj.width, obj.height); t.x = obj.x; t.y = obj.y; t.homeX = obj.homeX; t.homeY = obj.homeY; t.damage = obj.damage; t.destroyed = obj.destroyed; el.style.left = `${t.x}px`; el.style.top = `${t.y}px`; if (t.destroyed) el.style.display = "none"; if (el instanceof HTMLVideoElement && !this.paused) void el.play().catch(() => {});
+      const t = this.addSandboxObject(el, obj.width, obj.height); t.x = obj.x; t.y = obj.y; t.homeX = obj.homeX; t.homeY = obj.homeY; t.damage = obj.damage; t.destroyed = obj.destroyed; t.stage = Number.isInteger(obj.stage) ? Math.max(0, Math.min(3, obj.stage)) : 0;
+      t.field = restoreSceneField(obj.field, t.width, t.height, t.material) || undefined;
+      el.style.left = `${t.x}px`; el.style.top = `${t.y}px`; if (t.destroyed) el.style.display = "none"; else if (t.field?.removedCount) this.updateDynamicMask(t);
     }
   }
 
