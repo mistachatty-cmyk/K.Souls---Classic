@@ -16,6 +16,7 @@ import { createStoneChipPolygons } from "./stone-chips.mjs";
 import { createDigitalTearBlocks } from "./digital-tear.mjs";
 import { applyImpact, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField } from "./segment-field.mjs";
 import { sortTargetsFrontFirst, underlyingTargetForPoint } from "./layers.mjs";
+import { captureDestructionState, snapshotOpeningRects, type DestructionState } from "./destruction-replay.mjs";
 import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
@@ -94,7 +95,7 @@ class PageBattle {
   completedRun = false;
   rightControlUntil = 0;
   minimized = false;
-  snapshots: Array<{ at: number; fighters: Array<{ x: number; y: number; angle: number }>; score: number; kos: Record<Side, number> }> = [];
+  snapshots: Array<{ at: number; fighters: Array<{ id: number; x: number; y: number; angle: number }>; score: number; kos: Record<Side, number>; destruction: DestructionState }> = [];
   snapshotAt = 0;
   replayIndex: number | null = null;
   activeVideo: HTMLVideoElement | null = null;
@@ -193,7 +194,7 @@ class PageBattle {
     this.updateSideControls();
     this.spawn(this.playerOneSide(), false);
     this.npcAt = performance.now() + settings.spawnMs;
-    this.snapshots.push({ at: 0, fighters: this.fighters.map(f => ({ x: f.x, y: f.y, angle: f.angle })), score: 0, kos: { 1: 0, 2: 0 } });
+    this.snapshots.push(this.captureSnapshot());
     this.frame = requestAnimationFrame(this.tick);
   }
 
@@ -329,6 +330,11 @@ class PageBattle {
 
   elapsedMatchMs() { return Math.max(0, this.matchDurationMs - this.remainingMs); }
 
+  captureSnapshot() {
+    return { at: this.elapsedMatchMs(), fighters: this.fighters.map(f => ({ id: f.id, x: f.x, y: f.y, angle: f.angle })), score: this.score, kos: { ...this.teamKOs },
+      destruction: captureDestructionState([...this.targets.values()], this.damage, this.chunks) };
+  }
+
   visualEffects() { return pageEffects(settings.effectMode, matchMedia("(prefers-reduced-motion: reduce)").matches); }
 
   awardKo(fighter: Fighter, team: number) {
@@ -381,7 +387,7 @@ class PageBattle {
       if (!this.matchFinished && settings.modifier === "lok_bounty" && now >= this.bountyAt) { this.spawnBounty(); this.bountyAt = now + 8000; }
       if (now > this.scanAt) { this.scan(); this.scanAt = now + 900; }
       if (!this.matchFinished) this.step(dt);
-      if (now >= this.snapshotAt) { this.snapshots.push({ at: this.elapsedMatchMs(), fighters: this.fighters.map(f => ({ x: f.x, y: f.y, angle: f.angle })), score: this.score, kos: { ...this.teamKOs } }); this.snapshots = this.snapshots.slice(-(Math.ceil(this.matchDurationMs / 1000) + 1)); this.snapshotAt = now + 1000; }
+      if (now >= this.snapshotAt) { this.snapshots.push(this.captureSnapshot()); this.snapshots = this.snapshots.slice(-(Math.ceil(this.matchDurationMs / 1000) + 1)); this.snapshotAt = now + 1000; }
       if (now >= this.hudAt) { this.updateHud(); this.hudAt = now + 500; }
       const timeline = this.panel.querySelector<HTMLInputElement>("[data-timeline]");
       if (timeline && this.replayIndex === null) { timeline.max = String(Math.max(0, this.snapshots.length - 1)); timeline.value = timeline.max; }
@@ -662,7 +668,7 @@ class PageBattle {
     this.matchNpcSide = settings.npcSide; this.rightControlUntil = 0; this.paused = false; this.npcAt = performance.now() + 900;
     this.snapshots = []; this.snapshotAt = performance.now(); this.replayIndex = null;
     (this.root.querySelector('[data-action="pause"]') as HTMLElement).textContent = "Pause";
-    this.panel.dataset.open = "false"; this.spawn(this.playerOneSide(), false); this.updateHud();
+    this.panel.dataset.open = "false"; this.spawn(this.playerOneSide(), false); this.snapshots.push(this.captureSnapshot()); this.updateHud();
   }
 
   updateClassicAbilities(dtMs: number) {
@@ -1018,13 +1024,26 @@ class PageBattle {
   draw(now: number) {
     const effects = this.visualEffects();
     const ctx = this.ctx; ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    if (this.damage.length || [...this.targets.values()].some(target => !target.destroyed && target.field?.removedCount)) {
+    const replay = this.replayIndex === null ? null : this.snapshots[this.replayIndex];
+    const damageAreas = replay?.destruction.areas ?? this.damage;
+    const replayFields = replay?.destruction.fields;
+    const replayFieldById = new Map(replayFields?.map(field => [field.targetId, field]) ?? []);
+    const brokenIds = new Set(damageAreas.map(area => area.targetId));
+    const renderTargets = replay ? new Map([...this.targets].map(([element, target]) => {
+      const field = replayFieldById.get(target.id);
+      const restoredField = field ? { ...target.field, width: field.width, height: field.height, cellSize: field.cellSize, cols: field.cols, removedCount: field.removed.length,
+        cells: new Map(field.removed.map(key => [key, { stress: 0, removed: true }])) } as SegmentField : undefined;
+      return [element, { ...target, destroyed: brokenIds.has(target.id), field: restoredField }] as const;
+    })) : this.targets;
+    const currentOpenings = replayFields ? replayFields.flatMap(snapshotOpeningRects) : [...this.targets.values()].filter(target => !target.destroyed && target.field?.removedCount)
+      .flatMap(target => segmentOpeningRects(target.field!).map(cell => ({ targetId: target.id, x: target.x + cell.x, y: target.y + cell.y, width: cell.width, height: cell.height })));
+    if (damageAreas.length || currentOpenings.length) {
       const covers: Array<{ x: number; y: number; width: number; height: number; color: string }> = [];
       const arenaRects: Array<{ x: number; y: number; width: number; height: number }> = [];
       const colorCache = new Map<Target, string>();
-      const targetsById = new Map([...this.targets.values()].map(target => [target.id, target]));
+      const targetsById = new Map([...renderTargets.values()].map(target => [target.id, target]));
       const addOpening = (target: Target, x: number, y: number, width: number, height: number) => {
-        const under = underlyingTargetForPoint(target, this.targets, x + width / 2, y + height / 2);
+        const under = underlyingTargetForPoint(target, renderTargets, x + width / 2, y + height / 2);
         if (!under) { arenaRects.push({ x, y, width, height }); return; }
         let color = colorCache.get(under);
         if (!color) {
@@ -1034,18 +1053,16 @@ class PageBattle {
         }
         covers.push({ x, y, width, height, color });
       };
-      for (const area of this.damage) {
+      for (const area of damageAreas) {
         if (area.x + area.width < scrollX || area.y + area.height < scrollY || area.x > scrollX + innerWidth || area.y > scrollY + innerHeight) continue;
         const target = targetsById.get(area.targetId);
         if (target) addOpening(target, area.x, area.y, area.width, area.height);
         else arenaRects.push(area);
       }
-      for (const target of this.targets.values()) {
-        if (target.destroyed || target.damage <= 0) continue;
-        if (target.field) for (const cell of segmentOpeningRects(target.field)) {
-          const x = target.x + cell.x - scrollX, y = target.y + cell.y - scrollY;
-          if (x + cell.width >= 0 && x <= innerWidth && y + cell.height >= 0 && y <= innerHeight) addOpening(target, target.x + cell.x, target.y + cell.y, cell.width, cell.height);
-        }
+      for (const cell of currentOpenings) {
+        const target = targetsById.get(cell.targetId);
+        if (target && cell.x + cell.width >= scrollX && cell.x <= scrollX + innerWidth && cell.y + cell.height >= scrollY && cell.y <= scrollY + innerHeight)
+          addOpening(target, cell.x, cell.y, cell.width, cell.height);
       }
       for (const cover of covers) {
         ctx.fillStyle = cover.color;
@@ -1053,9 +1070,9 @@ class PageBattle {
       }
       ctx.save(); ctx.beginPath();
       for (const area of arenaRects) ctx.rect(area.x - scrollX, area.y - scrollY, area.width, area.height);
-      for (const target of this.targets.values()) {
+      for (const target of renderTargets.values()) {
         if (target.destroyed || target.damage <= 0) continue;
-        if (!target.field && !underlyingTargetForPoint(target, this.targets, target.impactX, target.impactY)) {
+        if (!replay && !target.field && !underlyingTargetForPoint(target, renderTargets, target.impactX, target.impactY)) {
           const r = 5 + Math.min(24, target.damage * 2.6);
           const x = target.impactX - scrollX, y = target.impactY - scrollY;
           ctx.moveTo(x + r, y);
@@ -1126,6 +1143,7 @@ class PageBattle {
       } catch { /* A media frame may be unavailable during its first decode. */ }
     }
     for (const target of this.targets.values()) {
+      if (replay) continue;
       if (target.destroyed) continue;
       const x = target.impactX, y = target.impactY, strength = Math.min(1, target.damage / 6);
       const age = now - target.lastHitAt;
@@ -1212,10 +1230,11 @@ class PageBattle {
       }
       ctx.restore();
     }
-    const replay = this.replayIndex === null ? null : this.snapshots[this.replayIndex];
     const restore: Array<{ fighter: Fighter; x: number; y: number; angle: number }> = [];
-    if (replay) this.fighters.forEach((fighter, i) => { const point = replay.fighters[i]; if (point) { restore.push({ fighter, x: fighter.x, y: fighter.y, angle: fighter.angle }); fighter.x = point.x; fighter.y = point.y; fighter.angle = point.angle; } });
+    const replayFighters = new Map(replay?.fighters.map(point => [point.id, point]) ?? []);
+    if (replay) this.fighters.forEach(fighter => { const point = replayFighters.get(fighter.id); if (point) { restore.push({ fighter, x: fighter.x, y: fighter.y, angle: fighter.angle }); fighter.x = point.x; fighter.y = point.y; fighter.angle = point.angle; } });
     for (const fighter of this.fighters) {
+      if (replay && !replayFighters.has(fighter.id)) continue;
       if (fighter.x < scrollX - 100 || fighter.x > scrollX + innerWidth + 100 || fighter.y < scrollY - 100 || fighter.y > scrollY + innerHeight + 100) continue;
       if (this.variant === "classic") {
         renderClassic(ctx, fighter as ReturnType<typeof spawnClassic>, effects.animated && fighter.flashFrames > 0, 1, settings.theme as never, false, true, now);
@@ -1226,7 +1245,7 @@ class PageBattle {
       }
     }
     for (const state of restore) { state.fighter.x = state.x; state.fighter.y = state.y; state.fighter.angle = state.angle; }
-    if (effects.animated) for (const chunk of this.chunks) {
+    if (effects.animated) for (const chunk of replay?.destruction.chunks ?? this.chunks) {
       if (chunk.x + chunk.width < scrollX || chunk.x - chunk.width > scrollX + innerWidth || chunk.y + chunk.height < scrollY || chunk.y - chunk.height > scrollY + innerHeight) continue;
       ctx.save(); ctx.translate(chunk.x, chunk.y); ctx.rotate(chunk.angle);
       const depth = chunk.material === "stone" ? 5 : chunk.material === "glass" ? 3 : 2;
