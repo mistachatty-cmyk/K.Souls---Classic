@@ -11,7 +11,8 @@ export function captureDestructionState(targets, areas, chunks) {
   return {
     fields,
     areas: areas.slice(-256).map(area => ({ ...area })),
-    chunks: chunks.slice(-48).map(chunk => ({ x: chunk.x, y: chunk.y, width: chunk.width, height: chunk.height, angle: chunk.angle, material: chunk.material, color: chunk.color })),
+    chunks: chunks.slice(-48).map(chunk => ({ x: chunk.x, y: chunk.y, width: chunk.width, height: chunk.height, angle: chunk.angle, material: chunk.material, color: chunk.color,
+      sourceTargetId: chunk.sourceTargetId, mediaX: chunk.mediaX, mediaY: chunk.mediaY })),
   };
 }
 

@@ -17,6 +17,7 @@ import { createDigitalTearBlocks } from "./digital-tear.mjs";
 import { applyImpact, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField } from "./segment-field.mjs";
 import { sortTargetsFrontFirst, underlyingTargetForPoint } from "./layers.mjs";
 import { captureDestructionState, snapshotOpeningRects, type DestructionState } from "./destruction-replay.mjs";
+import { containedMediaPlacement, mediaMaskAlpha } from "./owned-media-fragments.mjs";
 import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
@@ -27,7 +28,7 @@ type Projectile = { x: number; y: number; previousX: number; previousY: number; 
 type FloatingText = { x: number; y: number; value: string; color: string; life: number };
 type FractureMark = { segments: ReturnType<typeof createFracturePattern>; color: string; strength: number; createdAt: number };
 type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number; material?: PageMaterial; points?: Array<{ x: number; y: number }> };
-type ArenaChunk = { x: number; y: number; vx: number; vy: number; width: number; height: number; mass: number; angle: number; spin: number; material: PageMaterial; color: string; sourceTargetId: number; ownerTeam: number; hitFighters: Set<number>; secondaryBudget: number; life: number };
+type ArenaChunk = { x: number; y: number; vx: number; vy: number; width: number; height: number; mass: number; angle: number; spin: number; material: PageMaterial; color: string; sourceTargetId: number; mediaX?: number; mediaY?: number; ownerTeam: number; hitFighters: Set<number>; secondaryBudget: number; life: number };
 type Shockwave = { x: number; y: number; radius: number; maxRadius: number; life: number; maxLife: number; color: string; width: number };
 type Options = { variant?: Variant };
 type Settings = { npcSide: Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; matchDurationMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean; effectMode: "full" | "low"; destructionTempo: "adaptive" | "deep" };
@@ -592,7 +593,7 @@ class PageBattle {
     this.chunks = [];
     for (const target of this.targets.values()) {
       target.damage = 0; target.destroyed = false; target.stage = 0; target.lastHitAt = 0; target.fractures = []; target.field = undefined;
-      if (target.dynamic) { target.x = target.homeX ?? target.x; target.y = target.homeY ?? target.y; target.vx = target.vy = 0; const el = target.element as HTMLElement; el.style.display = ""; el.style.left = `${target.x}px`; el.style.top = `${target.y}px`; }
+      if (target.dynamic) { target.x = target.homeX ?? target.x; target.y = target.homeY ?? target.y; target.vx = target.vy = 0; const el = target.element as HTMLElement; el.style.display = ""; el.style.maskImage = ""; el.style.removeProperty("-webkit-mask-image"); el.style.left = `${target.x}px`; el.style.top = `${target.y}px`; }
     }
     this.floatingTexts.push({ x: scrollX + innerWidth / 2, y: scrollY + 120, value: "SCENE REBUILT", color: "#9eeaff", life: 1000 });
   }
@@ -852,6 +853,7 @@ class PageBattle {
     }
     if (target.damage < limit) return;
     target.destroyed = true; this.score++;
+    if (target.dynamic) (target.element as HTMLElement).style.display = "none";
     const combo = this.registerBreak(x, y, target.boss ? "#ffe681" : color);
     this.damage.push({ targetId: target.id, x: target.x, y: target.y, width: target.width, height: target.height });
     this.breakIntoShards(target, x, y, force, combo);
@@ -876,14 +878,32 @@ class PageBattle {
     }
     if (!target.field) return;
     const result = applyImpact(target.field, { targetId: target.id, x: x - target.x, y: y - target.y, directionX, directionY, damage });
+    if (result.removedCells.length && target.dynamic) this.updateDynamicMask(target);
     for (const piece of result.detachedChunks) {
       if (this.chunks.length >= 48) break;
       const impulse = Math.min(12, Math.max(2, force * 0.55));
       this.chunks.push({ x: target.x + piece.x + piece.width / 2, y: target.y + piece.y + piece.height / 2,
         vx: directionX * impulse + (Math.random() - 0.5) * 2, vy: directionY * impulse - 1,
         width: piece.width, height: piece.height, mass: piece.mass, angle: 0, spin: (Math.random() - 0.5) * 0.12,
-        material: target.material, color, sourceTargetId: target.id, ownerTeam, hitFighters: new Set(), secondaryBudget: 1, life: 4000 });
+        material: target.material, color, sourceTargetId: target.id, mediaX: target.dynamic ? piece.x : undefined, mediaY: target.dynamic ? piece.y : undefined,
+        ownerTeam, hitFighters: new Set(), secondaryBudget: 1, life: 4000 });
     }
+  }
+
+  updateDynamicMask(target: Target) {
+    const mask = mediaMaskAlpha(target.field || null);
+    if (!mask || !mask.alpha.includes(0)) return;
+    const canvas = document.createElement("canvas"); canvas.width = mask.width; canvas.height = mask.height;
+    const context = canvas.getContext("2d"); if (!context) return;
+    const image = context.createImageData(mask.width, mask.height);
+    for (let index = 0; index < mask.alpha.length; index++) {
+      image.data[index * 4] = 255; image.data[index * 4 + 1] = 255; image.data[index * 4 + 2] = 255; image.data[index * 4 + 3] = mask.alpha[index];
+    }
+    context.putImageData(image, 0, 0);
+    const value = `url("${canvas.toDataURL()}")`;
+    const style = (target.element as HTMLElement).style;
+    style.maskImage = value; style.setProperty("-webkit-mask-image", value);
+    style.maskSize = "100% 100%"; style.maskRepeat = "no-repeat";
   }
 
   recordFracture(target: Target, x: number, y: number, directionX: number, directionY: number, amount: number, color: string) {
@@ -924,6 +944,7 @@ class PageBattle {
       this.screenShake = Math.max(this.screenShake, source.boss ? 8 : 5);
       if (target.damage >= this.targetLimit(target)) {
         target.destroyed = true; this.score++;
+        if (target.dynamic) (target.element as HTMLElement).style.display = "none";
         const combo = this.registerBreak(impactX, impactY, color);
         this.damage.push({ targetId: target.id, x: target.x, y: target.y, width: target.width, height: target.height });
         this.breakIntoShards(target, impactX, impactY, amount * 2, combo);
@@ -1129,18 +1150,32 @@ class PageBattle {
       ctx.fillStyle = particle.color; ctx.fillRect(particle.x, particle.y, particle.size, particle.size);
     }
     ctx.globalAlpha = 1;
-    for (const target of this.targets.values()) {
+    for (const target of renderTargets.values()) {
       if (!target.dynamic || target.destroyed || target.x > scrollX + innerWidth || target.x + target.width < scrollX || target.y > scrollY + innerHeight || target.y + target.height < scrollY) continue;
       const el = target.element as HTMLElement;
       try {
-        if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) ctx.drawImage(el, target.x - scrollX, target.y - scrollY, target.width, target.height);
-        else if (el instanceof HTMLVideoElement && el.readyState >= 2) ctx.drawImage(el, target.x - scrollX, target.y - scrollY, target.width, target.height);
-        else if (el instanceof HTMLDivElement) {
+        ctx.save(); ctx.beginPath();
+        if (target.field?.removedCount) {
+          for (let row = 0; row < target.field.rows; row++) for (let col = 0; col < target.field.cols; col++) {
+            const cellX = col * target.field.cellSize, cellY = row * target.field.cellSize;
+            if (isSegmentSolid(target.field, cellX, cellY)) ctx.rect(target.x + cellX, target.y + cellY,
+              Math.min(target.field.cellSize, target.width - cellX), Math.min(target.field.cellSize, target.height - cellY));
+          }
+        } else ctx.rect(target.x, target.y, target.width, target.height);
+        ctx.clip();
+        if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
+          const placement = containedMediaPlacement(el.naturalWidth, el.naturalHeight, target.width, target.height, 0, 0);
+          if (placement) ctx.drawImage(el, target.x + placement.x, target.y + placement.y, placement.width, placement.height);
+        } else if (el instanceof HTMLVideoElement && el.readyState >= 2) {
+          const placement = containedMediaPlacement(el.videoWidth, el.videoHeight, target.width, target.height, 0, 0);
+          if (placement) ctx.drawImage(el, target.x + placement.x, target.y + placement.y, placement.width, placement.height);
+        } else if (el instanceof HTMLDivElement) {
           const style = getComputedStyle(el); ctx.fillStyle = style.backgroundColor === "rgba(0, 0, 0, 0)" ? "#356781" : style.backgroundColor;
-          ctx.fillRect(target.x - scrollX, target.y - scrollY, target.width, target.height);
-          ctx.fillStyle = style.color; ctx.font = "bold 12px system-ui"; ctx.textAlign = "center"; ctx.fillText(el.textContent || "SANDBOX PROP", target.x - scrollX + target.width / 2, target.y - scrollY + target.height / 2);
+          ctx.fillRect(target.x, target.y, target.width, target.height);
+          ctx.fillStyle = style.color; ctx.font = "bold 12px system-ui"; ctx.textAlign = "center"; ctx.fillText(el.textContent || "SANDBOX PROP", target.x + target.width / 2, target.y + target.height / 2);
         }
       } catch { /* A media frame may be unavailable during its first decode. */ }
+      finally { ctx.restore(); }
     }
     for (const target of this.targets.values()) {
       if (replay) continue;
@@ -1245,6 +1280,7 @@ class PageBattle {
       }
     }
     for (const state of restore) { state.fighter.x = state.x; state.fighter.y = state.y; state.fighter.angle = state.angle; }
+    const chunkSources = new Map([...this.targets.values()].filter(target => target.dynamic).map(target => [target.id, target]));
     if (effects.animated) for (const chunk of replay?.destruction.chunks ?? this.chunks) {
       if (chunk.x + chunk.width < scrollX || chunk.x - chunk.width > scrollX + innerWidth || chunk.y + chunk.height < scrollY || chunk.y - chunk.height > scrollY + innerHeight) continue;
       ctx.save(); ctx.translate(chunk.x, chunk.y); ctx.rotate(chunk.angle);
@@ -1252,6 +1288,21 @@ class PageBattle {
       ctx.fillStyle = "rgba(2,5,14,.28)"; ctx.fillRect(-chunk.width / 2 + 5, -chunk.height / 2 + 7, chunk.width, chunk.height);
       ctx.fillStyle = chunk.material === "paper" ? "#e9deca" : chunk.material === "stone" ? "#747f91" : chunk.material === "glass" ? "#a6e7f2" : "#1c3044";
       ctx.fillRect(-chunk.width / 2, -chunk.height / 2, chunk.width, chunk.height);
+      const source = chunk.sourceTargetId === undefined ? undefined : chunkSources.get(chunk.sourceTargetId);
+      const media = source?.element;
+      if (chunk.mediaX !== undefined && chunk.mediaY !== undefined && source &&
+          ((media instanceof HTMLImageElement && media.complete && media.naturalWidth > 0) ||
+           (media instanceof HTMLVideoElement && media.readyState >= 2))) {
+        const naturalWidth = media instanceof HTMLImageElement ? media.naturalWidth : media.videoWidth;
+        const naturalHeight = media instanceof HTMLImageElement ? media.naturalHeight : media.videoHeight;
+        const placement = containedMediaPlacement(naturalWidth, naturalHeight, source.width, source.height, chunk.mediaX, chunk.mediaY);
+        if (placement) {
+          ctx.save(); ctx.beginPath(); ctx.rect(-chunk.width / 2, -chunk.height / 2, chunk.width, chunk.height); ctx.clip();
+          try { ctx.drawImage(media, placement.x - chunk.width / 2, placement.y - chunk.height / 2, placement.width, placement.height); }
+          catch { /* The first video frame may not have decoded yet. */ }
+          ctx.restore();
+        }
+      }
       ctx.fillStyle = this.variant === "classic" ? "#ad5835" : "#61509f";
       ctx.fillRect(-chunk.width / 2, chunk.height / 2 - depth, chunk.width, depth);
       ctx.strokeStyle = chunk.color; ctx.lineWidth = 1; ctx.strokeRect(-chunk.width / 2, -chunk.height / 2, chunk.width, chunk.height);
