@@ -18,6 +18,7 @@ import { applyImpact, createSegmentField, isSegmentSolid, resolveSegmentContact,
 import { sortTargetsFrontFirst, underlyingTargetForPoint } from "./layers.mjs";
 import { captureDestructionState, snapshotOpeningRects, type DestructionState } from "./destruction-replay.mjs";
 import { containedMediaPlacement, mediaMaskAlpha } from "./owned-media-fragments.mjs";
+import { captureVideoTimes, pauseVideos, resumeVideos, seekVideos, type VideoTime } from "./video-timeline.mjs";
 import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
@@ -96,7 +97,7 @@ class PageBattle {
   completedRun = false;
   rightControlUntil = 0;
   minimized = false;
-  snapshots: Array<{ at: number; fighters: Array<{ id: number; x: number; y: number; angle: number }>; score: number; kos: Record<Side, number>; destruction: DestructionState }> = [];
+  snapshots: Array<{ at: number; fighters: Array<{ id: number; x: number; y: number; angle: number }>; score: number; kos: Record<Side, number>; videos: VideoTime[]; destruction: DestructionState }> = [];
   snapshotAt = 0;
   replayIndex: number | null = null;
   activeVideo: HTMLVideoElement | null = null;
@@ -333,6 +334,7 @@ class PageBattle {
 
   captureSnapshot() {
     return { at: this.elapsedMatchMs(), fighters: this.fighters.map(f => ({ id: f.id, x: f.x, y: f.y, angle: f.angle })), score: this.score, kos: { ...this.teamKOs },
+      videos: captureVideoTimes([...this.targets.values()]),
       destruction: captureDestructionState([...this.targets.values()], this.damage, this.chunks) };
   }
 
@@ -588,12 +590,13 @@ class PageBattle {
   }
 
   rebuildScene() {
+    this.replayIndex = null;
     this.damage.length = 0;
     this.shards = [];
     this.chunks = [];
     for (const target of this.targets.values()) {
       target.damage = 0; target.destroyed = false; target.stage = 0; target.lastHitAt = 0; target.fractures = []; target.field = undefined;
-      if (target.dynamic) { target.x = target.homeX ?? target.x; target.y = target.homeY ?? target.y; target.vx = target.vy = 0; const el = target.element as HTMLElement; el.style.display = ""; el.style.maskImage = ""; el.style.removeProperty("-webkit-mask-image"); el.style.left = `${target.x}px`; el.style.top = `${target.y}px`; }
+      if (target.dynamic) { target.x = target.homeX ?? target.x; target.y = target.homeY ?? target.y; target.vx = target.vy = 0; const el = target.element as HTMLElement; el.style.display = ""; el.style.visibility = ""; el.style.maskImage = ""; el.style.removeProperty("-webkit-mask-image"); el.style.left = `${target.x}px`; el.style.top = `${target.y}px`; }
     }
     this.floatingTexts.push({ x: scrollX + innerWidth / 2, y: scrollY + 120, value: "SCENE REBUILT", color: "#9eeaff", life: 1000 });
   }
@@ -616,12 +619,13 @@ class PageBattle {
     const records = await new Promise<any[]>((resolve, reject) => { const req = db.transaction("scenes", "readonly").objectStore("scenes").getAll(); req.onsuccess = () => resolve(req.result.filter((v: any) => v.kind === "kinetic-scene")); req.onerror = () => reject(req.error); }); db.close();
     const chosen = records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!chosen) { this.floatingTexts.push({ x: scrollX + innerWidth / 2, y: scrollY + 100, value: "NO SAVED SCENES", color: "#ffd479", life: 1100 }); return; }
-    for (const t of this.targets.values()) if (t.dynamic) { this.targets.delete(t.element); t.element.remove(); }
+    for (const t of this.targets.values()) if (t.dynamic) { this.targets.delete(t.element); const media = t.element as HTMLImageElement | HTMLVideoElement; if (media instanceof HTMLVideoElement) media.pause(); if (media.src?.startsWith("blob:")) URL.revokeObjectURL(media.src); t.element.remove(); }
+    this.activeVideo = null;
     for (const obj of chosen.objects) {
       let el: HTMLElement;
-      if (obj.blob && (obj.kind === "img" || obj.kind === "video")) { el = document.createElement(obj.kind) as HTMLElement; (el as HTMLImageElement | HTMLVideoElement).src = URL.createObjectURL(obj.blob); if (obj.kind === "video") { const v = el as HTMLVideoElement; this.activeVideo = v; v.controls = true; v.muted = true; v.loop = true; v.playsInline = true; v.addEventListener("loadedmetadata", () => { const timeline = this.panel.querySelector<HTMLInputElement>("[data-video-timeline]"); if (timeline) timeline.max = String(v.duration || 0); }); void v.play().catch(() => {}); } }
+      if (obj.blob && (obj.kind === "img" || obj.kind === "video")) { el = document.createElement(obj.kind) as HTMLElement; (el as HTMLImageElement | HTMLVideoElement).src = URL.createObjectURL(obj.blob); if (obj.kind === "video") { const v = el as HTMLVideoElement; this.activeVideo = v; v.controls = true; v.muted = true; v.loop = true; v.playsInline = true; v.addEventListener("loadedmetadata", () => this.syncVideoTimeline()); v.addEventListener("timeupdate", () => this.syncVideoTimeline()); } }
       else { el = document.createElement("div"); el.textContent = obj.text || obj.name; el.style.cssText = `display:grid;place-items:center;background:${obj.color || "linear-gradient(135deg,#46789b,#101522)"};color:white;font:800 12px system-ui`; }
-      const t = this.addSandboxObject(el, obj.width, obj.height); t.x = obj.x; t.y = obj.y; t.homeX = obj.homeX; t.homeY = obj.homeY; t.damage = obj.damage; t.destroyed = obj.destroyed; el.style.left = `${t.x}px`; el.style.top = `${t.y}px`; if (t.destroyed) el.style.display = "none";
+      const t = this.addSandboxObject(el, obj.width, obj.height); t.x = obj.x; t.y = obj.y; t.homeX = obj.homeX; t.homeY = obj.homeY; t.damage = obj.damage; t.destroyed = obj.destroyed; el.style.left = `${t.x}px`; el.style.top = `${t.y}px`; if (t.destroyed) el.style.display = "none"; if (el instanceof HTMLVideoElement && !this.paused) void el.play().catch(() => {});
     }
   }
 
@@ -642,6 +646,7 @@ class PageBattle {
   finishMatch() {
     if (this.matchFinished) return;
     this.matchFinished = true; this.paused = true;
+    pauseVideos([...this.targets.values()]);
     this.heldSides.clear();
     this.heldKeys.clear();
     this.root.querySelectorAll<HTMLElement>('[data-spraying="true"]').forEach(button => { button.dataset.spraying = "false"; });
@@ -670,6 +675,20 @@ class PageBattle {
     this.snapshots = []; this.snapshotAt = performance.now(); this.replayIndex = null;
     (this.root.querySelector('[data-action="pause"]') as HTMLElement).textContent = "Pause";
     this.panel.dataset.open = "false"; this.spawn(this.playerOneSide(), false); this.snapshots.push(this.captureSnapshot()); this.updateHud();
+    resumeVideos([...this.targets.values()]);
+  }
+
+  syncVideoTimeline() {
+    const slider = this.panel.querySelector<HTMLInputElement>("[data-video-timeline]");
+    if (!slider || !this.activeVideo) return;
+    slider.max = String(Number.isFinite(this.activeVideo.duration) ? this.activeVideo.duration : 0);
+    if (document.activeElement !== slider) slider.value = String(this.activeVideo.currentTime);
+  }
+
+  showReplayVideos(sample: { videos: VideoTime[] } | null) {
+    const visible = sample ? new Set(sample.videos.map(video => video.targetId)) : null;
+    for (const target of this.targets.values()) if (target.dynamic && target.element instanceof HTMLVideoElement)
+      target.element.style.visibility = visible && !visible.has(target.id) ? "hidden" : "";
   }
 
   updateClassicAbilities(dtMs: number) {
@@ -1153,6 +1172,7 @@ class PageBattle {
     for (const target of renderTargets.values()) {
       if (!target.dynamic || target.destroyed || target.x > scrollX + innerWidth || target.x + target.width < scrollX || target.y > scrollY + innerHeight || target.y + target.height < scrollY) continue;
       const el = target.element as HTMLElement;
+      if (replay && el instanceof HTMLVideoElement && !replay.videos.some(video => video.targetId === target.id)) continue;
       try {
         ctx.save(); ctx.beginPath();
         if (target.field?.removedCount) {
@@ -1394,7 +1414,7 @@ class PageBattle {
 
   action(name: string) {
     if (name === "exit") { this.stop(); return; }
-    if (name === "pause") { this.paused = !this.paused; if (!this.paused) this.replayIndex = null; (this.root.querySelector('[data-action="pause"]') as HTMLElement).textContent = this.paused ? "Resume" : "Pause"; return; }
+    if (name === "pause") { if (this.matchFinished) return; this.paused = !this.paused; if (this.paused) pauseVideos([...this.targets.values()]); else { this.replayIndex = null; this.showReplayVideos(null); resumeVideos([...this.targets.values()]); } (this.root.querySelector('[data-action="pause"]') as HTMLElement).textContent = this.paused ? "Resume" : "Pause"; return; }
     if (name === "close" || (this.panel.dataset.open === "true" && this.panel.dataset.view === name)) { this.panel.dataset.open = "false"; return; }
     if (name === "creator" && this.panel.dataset.view === "creator" && this.panel.dataset.open === "true") { this.panel.dataset.minimized = this.panel.dataset.minimized === "true" ? "false" : "true"; return; }
     this.panel.dataset.view = name; this.panel.dataset.open = "true"; this.panel.dataset.minimized = "false";
@@ -1411,14 +1431,15 @@ class PageBattle {
       this.panel.innerHTML = `<div data-creator-head><h2>Creative Sandbox · Live Match</h2><button data-minimize>Minimize</button></div><p class="notice">These objects share the live match physics. Fighters collide with and break them; the page underneath is restored when you leave.</p><section><strong>Starter scenes</strong><div class="controls"><button data-scene="neon">Neon tiles</button><button data-scene="ruins">Rift ruins</button><button data-scene="garden">Sky garden</button></div></section><section><label>Add image or video<input data-upload type="file" accept="image/*,video/mp4,video/webm,video/ogg"></label></section><section><label>Match replay · scrub while paused<input data-timeline type="range" min="0" max="${Math.max(0, this.snapshots.length - 1)}" value="${this.replayIndex ?? Math.max(0, this.snapshots.length - 1)}"></label><small data-replay-time>${Math.ceil((this.snapshots[this.replayIndex ?? Math.max(0, this.snapshots.length - 1)]?.at || 0) / 1000)}s</small><label>Video playback position<input data-video-timeline type="range" min="0" max="0" value="0"></label></section><section class="controls"><button data-rebuild>Rebuild scene</button><button data-save>Save scene</button><button data-open-scene>Open latest scene</button><button data-export>Export arena still</button><button data-record>Record 8-second replay</button></section><p class="notice" data-creator-status role="status">Local media and scenes stay on this device. Drag props to place them. Video stays muted.</p>`;
       this.panel.querySelector("[data-minimize]")?.addEventListener("click", () => { this.panel.dataset.minimized = "true"; });
       this.panel.querySelectorAll<HTMLButtonElement>("[data-scene]").forEach(button => button.addEventListener("click", () => { this.addStarterScene(button.dataset.scene || "neon"); this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Starter props added to the live physics world."; }));
-      this.panel.querySelector<HTMLInputElement>("[data-upload]")?.addEventListener("change", event => { const file = (event.currentTarget as HTMLInputElement).files?.[0]; if (!file) return; if (!file.type.startsWith("image/") && !["video/mp4", "video/webm", "video/ogg"].includes(file.type)) { this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Choose an image, MP4, WebM, or Ogg video."; return; } if (file.size > 120 * 1024 * 1024) { this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Choose a file smaller than 120 MB."; return; } const media = document.createElement(file.type.startsWith("video/") ? "video" : "img") as HTMLImageElement | HTMLVideoElement; media.src = URL.createObjectURL(file); media.setAttribute("aria-label", file.name); if (media instanceof HTMLVideoElement) { this.activeVideo = media; media.controls = true; media.muted = true; media.loop = true; media.playsInline = true; void media.play().catch(() => {}); const scrub = this.panel.querySelector<HTMLInputElement>("[data-video-timeline]")!; media.addEventListener("loadedmetadata", () => { scrub.max = String(media.duration || 0); }); media.addEventListener("timeupdate", () => { if (document.activeElement !== scrub) scrub.value = String(media.currentTime); }); } this.addSandboxObject(media); this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = `${file.name} added as a movable physics target.`; });
+      this.panel.querySelector<HTMLInputElement>("[data-upload]")?.addEventListener("change", event => { const file = (event.currentTarget as HTMLInputElement).files?.[0]; if (!file) return; if (!file.type.startsWith("image/") && !["video/mp4", "video/webm", "video/ogg"].includes(file.type)) { this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Choose an image, MP4, WebM, or Ogg video."; return; } if (file.size > 120 * 1024 * 1024) { this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Choose a file smaller than 120 MB."; return; } const media = document.createElement(file.type.startsWith("video/") ? "video" : "img") as HTMLImageElement | HTMLVideoElement; media.src = URL.createObjectURL(file); media.setAttribute("aria-label", file.name); if (media instanceof HTMLVideoElement) { this.activeVideo = media; media.controls = true; media.muted = true; media.loop = true; media.playsInline = true; media.addEventListener("loadedmetadata", () => this.syncVideoTimeline()); media.addEventListener("timeupdate", () => this.syncVideoTimeline()); } this.addSandboxObject(media); if (media instanceof HTMLVideoElement && !this.paused) void media.play().catch(() => {}); this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = `${file.name} added as a movable physics target.`; });
       this.panel.querySelector<HTMLInputElement>("[data-video-timeline]")?.addEventListener("input", event => { if (this.activeVideo) this.activeVideo.currentTime = Number((event.currentTarget as HTMLInputElement).value); });
       this.panel.querySelector("[data-rebuild]")?.addEventListener("click", () => this.rebuildScene());
       this.panel.querySelector("[data-save]")?.addEventListener("click", () => { void this.saveScene().then(() => this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Scene saved to this device.").catch(() => this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Local scene storage is unavailable in this browser."); });
       this.panel.querySelector("[data-open-scene]")?.addEventListener("click", () => { void this.openScene().then(() => this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Latest saved scene opened.").catch(() => this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Could not open the saved scene."); });
       this.panel.querySelector("[data-export]")?.addEventListener("click", () => this.exportScene());
       this.panel.querySelector("[data-record]")?.addEventListener("click", () => this.recordReplay());
-      this.panel.querySelector<HTMLInputElement>("[data-timeline]")?.addEventListener("input", event => { const input = event.currentTarget as HTMLInputElement; this.replayIndex = Number(input.value); this.paused = true; (this.root.querySelector('[data-action="pause"]') as HTMLElement).textContent = "Resume"; const snapshot = this.snapshots[this.replayIndex]; this.panel.querySelector<HTMLElement>("[data-replay-time]")!.textContent = `${Math.floor((snapshot?.at || 0) / 1000)}s · paused`; });
+      this.panel.querySelector<HTMLInputElement>("[data-timeline]")?.addEventListener("input", event => { const input = event.currentTarget as HTMLInputElement; this.replayIndex = Number(input.value); this.paused = true; (this.root.querySelector('[data-action="pause"]') as HTMLElement).textContent = "Resume"; const snapshot = this.snapshots[this.replayIndex]; const targets = [...this.targets.values()]; pauseVideos(targets); if (snapshot) { seekVideos(targets, snapshot.videos); this.showReplayVideos(snapshot); } this.syncVideoTimeline(); this.panel.querySelector<HTMLElement>("[data-replay-time]")!.textContent = `${Math.floor((snapshot?.at || 0) / 1000)}s · paused`; });
+      this.syncVideoTimeline();
     } else if (name === "bestiary") {
       const entries = this.variant === "classic" ? classicBestiary : ks2Bestiary;
       this.panel.innerHTML = `<h2>${this.variant === "classic" ? "Classic" : "KS2"} Bestiary</h2><p class="notice">Choose a fighter for the next spawn.</p>${select("Spawn fighter", "fighter", entries.filter(e => e.role !== "Weapon" && e.role !== "Relic").map(e => e.id))}<div>${entries.map(e => `<div class="entry"><strong style="color:${e.color}">${e.name}</strong><small>${e.role} · HP ${e.hp} · ${e.weapon}</small><div>${e.lore}</div></div>`).join("")}</div>`;
@@ -1456,6 +1477,7 @@ class PageBattle {
       if (media.src?.startsWith("blob:")) URL.revokeObjectURL(media.src);
       target.element.remove();
     }
+    this.activeVideo = null;
     this.host.remove();
     if (game === this) game = null;
   }
