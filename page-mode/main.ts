@@ -15,6 +15,7 @@ import { createPaperTearPolygons } from "./paper-shards.mjs";
 import { createStoneChipPolygons } from "./stone-chips.mjs";
 import { createDigitalTearBlocks } from "./digital-tear.mjs";
 import { applyImpact, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField } from "./segment-field.mjs";
+import { sortTargetsFrontFirst, underlyingTargetForPoint } from "./layers.mjs";
 import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
@@ -73,7 +74,7 @@ class PageBattle {
   shockwaves: Shockwave[] = [];
   targets = new Map<Element, Target>();
   nextTargetId = 1;
-  damage: { x: number; y: number; width: number; height: number }[] = [];
+  damage: { targetId: number; x: number; y: number; width: number; height: number }[] = [];
   screenShake = 0;
   running = true;
   paused = false;
@@ -396,7 +397,7 @@ class PageBattle {
     const shrink = settings.modifier === "shrinking_arena" ? Math.min(0.32, this.elapsedMatchMs() / this.matchDurationMs * 0.32) : 0;
     const minX = 18 + Math.min(worldWidth * 0.38, worldWidth * shrink), maxX = Math.max(minX + 36, worldWidth - 18 - worldWidth * shrink);
     const minY = 85 + Math.min(Math.max(0, worldHeight - 120) * 0.38, worldHeight * shrink), maxY = Math.max(minY + 80, worldHeight - 18 - worldHeight * shrink);
-    const visibleTargets = [...this.targets.values()].filter(t => !t.destroyed && t.x + t.width >= scrollX - 100 && t.x <= scrollX + innerWidth + 100 && t.y + t.height >= scrollY - 100 && t.y <= scrollY + innerHeight + 100);
+    const visibleTargets = sortTargetsFrontFirst([...this.targets.values()].filter(t => !t.destroyed && t.x + t.width >= scrollX - 100 && t.x <= scrollX + innerWidth + 100 && t.y + t.height >= scrollY - 100 && t.y <= scrollY + innerHeight + 100));
     if (this.variant === "ks2" && settings.motion === "battle") {
       // KS2's standalone AI and fighter abilities operate on document coordinates here.
       const state = { aiAggressive: true, screensaverMode: false, optGrid: true, optPool: false, modifier: settings.modifier, fighterSpeed: settings.speed, timeScale: 1 } as GameState;
@@ -494,6 +495,7 @@ class PageBattle {
         // Match the source combat loop's brief hit flash when a fighter lands a hit.
         fighter.flashFrames = Math.max(fighter.flashFrames, 3);
         this.damageTarget(target, contact.x, contact.y, Math.max(0.6, Math.min(5, impactSpeed * 0.34)), fighter.team === 1 ? "#ff714e" : "#72dfff", impactSpeed, incomingX, incomingY, fighter.team);
+        break;
       }
     }
     for (let i = 0; i < this.fighters.length; i++) {
@@ -845,7 +847,7 @@ class PageBattle {
     if (target.damage < limit) return;
     target.destroyed = true; this.score++;
     const combo = this.registerBreak(x, y, target.boss ? "#ffe681" : color);
-    this.damage.push({ x: target.x, y: target.y, width: target.width, height: target.height });
+    this.damage.push({ targetId: target.id, x: target.x, y: target.y, width: target.width, height: target.height });
     this.breakIntoShards(target, x, y, force, combo);
     this.shockwaves.push({ x, y, radius: 8, maxRadius: Math.min(340, 105 + force * 12 + combo * 12), life: 560, maxLife: 560, color: target.boss ? "#ffe681" : color, width: target.boss ? 7 : 4 });
     this.floatingTexts.push({ x: target.x + target.width / 2, y: target.y, value: target.boss ? "RIFT WARDEN DOWN!" : combo > 1 ? `PAGE BREAK · ×${combo}` : "PAGE BREAK!", color: target.boss ? "#ffe681" : "#fff0a6", life: 1200 });
@@ -917,7 +919,7 @@ class PageBattle {
       if (target.damage >= this.targetLimit(target)) {
         target.destroyed = true; this.score++;
         const combo = this.registerBreak(impactX, impactY, color);
-        this.damage.push({ x: target.x, y: target.y, width: target.width, height: target.height });
+        this.damage.push({ targetId: target.id, x: target.x, y: target.y, width: target.width, height: target.height });
         this.breakIntoShards(target, impactX, impactY, amount * 2, combo);
         this.shockwaves.push({ x: impactX, y: impactY, radius: 5, maxRadius: Math.min(300, 90 + combo * 16), life: 480, maxLife: 480, color, width: 3 + Math.min(3, combo * 0.4) });
       }
@@ -1017,18 +1019,43 @@ class PageBattle {
     const effects = this.visualEffects();
     const ctx = this.ctx; ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     if (this.damage.length || [...this.targets.values()].some(target => !target.destroyed && target.field?.removedCount)) {
-      ctx.save(); ctx.beginPath();
+      const covers: Array<{ x: number; y: number; width: number; height: number; color: string }> = [];
+      const arenaRects: Array<{ x: number; y: number; width: number; height: number }> = [];
+      const colorCache = new Map<Target, string>();
+      const targetsById = new Map([...this.targets.values()].map(target => [target.id, target]));
+      const addOpening = (target: Target, x: number, y: number, width: number, height: number) => {
+        const under = underlyingTargetForPoint(target, this.targets, x + width / 2, y + height / 2);
+        if (!under) { arenaRects.push({ x, y, width, height }); return; }
+        let color = colorCache.get(under);
+        if (!color) {
+          const background = getComputedStyle(under.element).backgroundColor;
+          color = background && background !== "transparent" && background !== "rgba(0, 0, 0, 0)" ? background : under.material === "paper" ? "#e9e0ce" : under.material === "stone" ? "#303543" : "#1a2234";
+          colorCache.set(under, color);
+        }
+        covers.push({ x, y, width, height, color });
+      };
       for (const area of this.damage) {
         if (area.x + area.width < scrollX || area.y + area.height < scrollY || area.x > scrollX + innerWidth || area.y > scrollY + innerHeight) continue;
-        ctx.rect(area.x - scrollX, area.y - scrollY, area.width, area.height);
+        const target = targetsById.get(area.targetId);
+        if (target) addOpening(target, area.x, area.y, area.width, area.height);
+        else arenaRects.push(area);
       }
       for (const target of this.targets.values()) {
         if (target.destroyed || target.damage <= 0) continue;
         if (target.field) for (const cell of segmentOpeningRects(target.field)) {
           const x = target.x + cell.x - scrollX, y = target.y + cell.y - scrollY;
-          if (x + cell.width >= 0 && x <= innerWidth && y + cell.height >= 0 && y <= innerHeight) ctx.rect(x, y, cell.width, cell.height);
+          if (x + cell.width >= 0 && x <= innerWidth && y + cell.height >= 0 && y <= innerHeight) addOpening(target, target.x + cell.x, target.y + cell.y, cell.width, cell.height);
         }
-        if (!target.field) {
+      }
+      for (const cover of covers) {
+        ctx.fillStyle = cover.color;
+        ctx.fillRect(cover.x - scrollX, cover.y - scrollY, cover.width, cover.height);
+      }
+      ctx.save(); ctx.beginPath();
+      for (const area of arenaRects) ctx.rect(area.x - scrollX, area.y - scrollY, area.width, area.height);
+      for (const target of this.targets.values()) {
+        if (target.destroyed || target.damage <= 0) continue;
+        if (!target.field && !underlyingTargetForPoint(target, this.targets, target.impactX, target.impactY)) {
           const r = 5 + Math.min(24, target.damage * 2.6);
           const x = target.impactX - scrollX, y = target.impactY - scrollY;
           ctx.moveTo(x + r, y);
