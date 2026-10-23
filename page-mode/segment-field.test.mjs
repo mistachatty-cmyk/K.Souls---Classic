@@ -1,6 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyImpact, applySegmentImpact, chunkSilhouette, chunkTouchesCircle, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects } from "./segment-field.mjs";
+import { applyImpact, applySegmentImpact, chunkSilhouette, chunkTargetContact, chunkTouchesCircle, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects } from "./segment-field.mjs";
+
+test("a fragment wing can hit a solid target while its center passes through empty space", () => {
+  const chunk = { x: 100, y: 100, width: 48, height: 48, angle: 0,
+    cells: [{ x: 16, y: 0, width: 16, height: 16 }, { x: 0, y: 16, width: 16, height: 16 }] };
+  const target = { x: 92, y: 76, width: 16, height: 16, field: null };
+  assert.deepEqual(chunkTargetContact(chunk, target), { x: 100, y: 84 });
+  assert.equal(chunkTargetContact(chunk, { ...target, x: 76 }), null);
+  const field = createSegmentField(16, 16, "glass");
+  field.cells.set(0, { stress: 9, removed: true });
+  assert.equal(chunkTargetContact(chunk, { ...target, field }), null);
+  chunk.angle = Math.PI / 2;
+  assert.ok(chunkTargetContact(chunk, { ...target, x: 116, y: 92 }));
+});
 
 test("a rotating chunk hits fighters only where a removed cell exists", () => {
   const chunk = { x: 100, y: 100, width: 48, height: 48, angle: 0,

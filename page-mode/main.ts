@@ -14,7 +14,7 @@ import { createGlassShardPolygons } from "./glass-shards.mjs";
 import { createPaperTearPolygons } from "./paper-shards.mjs";
 import { createStoneChipPolygons } from "./stone-chips.mjs";
 import { createDigitalTearBlocks } from "./digital-tear.mjs";
-import { applyImpact, chunkSilhouette, chunkTouchesCircle, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField, type SegmentRect } from "./segment-field.mjs";
+import { applyImpact, chunkSilhouette, chunkTargetContact, chunkTouchesCircle, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField, type SegmentRect } from "./segment-field.mjs";
 import { sortTargetsFrontFirst, underlyingTargetForPoint, descendantLayersByElement, visibleOpeningRects, openingLayerRects } from "./layers.mjs";
 import { captureDestructionState, snapshotOpeningRects, type DestructionState } from "./destruction-replay.mjs";
 import { containedMediaPlacement, mediaMaskAlpha } from "./owned-media-fragments.mjs";
@@ -825,12 +825,15 @@ class PageBattle {
         if (fighter.hp <= 0) this.awardKo(fighter, chunk.ownerTeam);
       }
       if (chunk.secondaryBudget && Math.hypot(chunk.vx, chunk.vy) > 1.5) {
-        const target = targets.find(candidate => candidate.id !== chunk.sourceTargetId && !candidate.destroyed
-          && chunk.x >= candidate.x && chunk.x < candidate.x + candidate.width && chunk.y >= candidate.y && chunk.y < candidate.y + candidate.height
-          && (!candidate.field || isSegmentSolid(candidate.field, chunk.x - candidate.x, chunk.y - candidate.y)));
+        let contact: { x: number; y: number } | null = null;
+        const target = targets.find(candidate => {
+          if (candidate.id === chunk.sourceTargetId || candidate.destroyed) return false;
+          contact = chunkTargetContact(chunk, candidate);
+          return contact !== null;
+        });
         if (target) {
           chunk.secondaryBudget = 0;
-          this.damageTarget(target, chunk.x, chunk.y, Math.min(2, chunk.mass * 0.55), chunk.color, Math.hypot(chunk.vx, chunk.vy), chunk.vx, chunk.vy, chunk.ownerTeam);
+          this.damageTarget(target, contact!.x, contact!.y, Math.min(2, chunk.mass * 0.55), chunk.color, Math.hypot(chunk.vx, chunk.vy), chunk.vx, chunk.vy, chunk.ownerTeam);
           chunk.vx *= -0.45; chunk.vy *= -0.45;
         }
       }

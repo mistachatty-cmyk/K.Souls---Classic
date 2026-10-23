@@ -55,6 +55,7 @@ export function applySegmentImpact(field, x, y, directionX, directionY, damage) 
 
 export const DESTRUCTION_WORLD_VERSION = 1;
 export const MAX_CHUNK_SILHOUETTE_CELLS = 32;
+const CHUNK_CONTACT_PROBES = [[0.5, 0.5], [0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]];
 
 /** Target-local removed cells become bounded rects relative to a chunk's top-left. */
 export function chunkSilhouette(piece) {
@@ -87,6 +88,27 @@ export function chunkTouchesCircle(chunk, x, y, radius) {
     if ((localX - nearestX) ** 2 + (localY - nearestY) ** 2 <= radius ** 2) return true;
   }
   return false;
+}
+
+/** Bounded conservative contact: each visible cell contributes five interior probes. */
+export function chunkTargetContact(chunk, target) {
+  if (!chunk || !target || !finite(chunk.x, chunk.y, chunk.width, chunk.height, chunk.angle,
+      target.x, target.y, target.width, target.height) || chunk.width <= 0 || chunk.height <= 0
+      || target.width <= 0 || target.height <= 0) return null;
+  const reach = Math.hypot(chunk.width, chunk.height) / 2;
+  if (chunk.x + reach < target.x || chunk.x - reach > target.x + target.width
+      || chunk.y + reach < target.y || chunk.y - reach > target.y + target.height) return null;
+  const cos = Math.cos(chunk.angle), sin = Math.sin(chunk.angle);
+  const cells = chunk.cells?.length ? chunk.cells : [{ x: 0, y: 0, width: chunk.width, height: chunk.height }];
+  for (const cell of cells) for (const [u, v] of CHUNK_CONTACT_PROBES) {
+    const localX = cell.x + cell.width * u - chunk.width / 2;
+    const localY = cell.y + cell.height * v - chunk.height / 2;
+    const x = chunk.x + localX * cos - localY * sin;
+    const y = chunk.y + localX * sin + localY * cos;
+    if (x >= target.x && x < target.x + target.width && y >= target.y && y < target.y + target.height
+        && (!target.field || isSegmentSolid(target.field, x - target.x, y - target.y))) return { x, y };
+  }
+  return null;
 }
 
 function detachUnsupportedCells(field) {
