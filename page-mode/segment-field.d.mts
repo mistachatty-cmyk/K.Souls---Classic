@@ -7,6 +7,7 @@ export type ImpactInput = { targetId: number; x: number; y: number; directionX: 
 export const DESTRUCTION_WORLD_VERSION: 1;
 export const MAX_CHUNK_SILHOUETTE_CELLS: 32;
 export function chunkSilhouette(piece: DetachedChunk): SegmentRect[] | null;
+export function chunkTouchesCircle(chunk: SegmentRect & { angle: number; cells?: SegmentRect[] }, x: number, y: number, radius: number): boolean;
 export function applyImpact(field: SegmentField | null, impact: ImpactInput): { version: 1; targetId: number; removedCells: SegmentRect[]; openings: SegmentRect[]; detachedChunks: DetachedChunk[]; wholeTargetBreak: boolean };
 export function createSegmentField(width: number, height: number, material: PageMaterial, cellSize?: number, maxCells?: number): SegmentField | null;
 export function applySegmentImpact(field: SegmentField | null, x: number, y: number, directionX: number, directionY: number, damage: number): { removedCells: SegmentRect[] };

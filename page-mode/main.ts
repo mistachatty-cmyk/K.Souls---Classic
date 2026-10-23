@@ -14,7 +14,7 @@ import { createGlassShardPolygons } from "./glass-shards.mjs";
 import { createPaperTearPolygons } from "./paper-shards.mjs";
 import { createStoneChipPolygons } from "./stone-chips.mjs";
 import { createDigitalTearBlocks } from "./digital-tear.mjs";
-import { applyImpact, chunkSilhouette, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField, type SegmentRect } from "./segment-field.mjs";
+import { applyImpact, chunkSilhouette, chunkTouchesCircle, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField, type SegmentRect } from "./segment-field.mjs";
 import { sortTargetsFrontFirst, underlyingTargetForPoint, descendantLayersByElement, visibleOpeningRects, openingLayerRects } from "./layers.mjs";
 import { captureDestructionState, snapshotOpeningRects, type DestructionState } from "./destruction-replay.mjs";
 import { containedMediaPlacement, mediaMaskAlpha } from "./owned-media-fragments.mjs";
@@ -814,9 +814,7 @@ class PageBattle {
       }
       for (const fighter of this.fighters) {
         if (fighter.dead || chunk.hitFighters.has(fighter.id)) continue;
-        const nearestX = Math.max(chunk.x - chunk.width / 2, Math.min(fighter.x, chunk.x + chunk.width / 2));
-        const nearestY = Math.max(chunk.y - chunk.height / 2, Math.min(fighter.y, chunk.y + chunk.height / 2));
-        if (Math.hypot(fighter.x - nearestX, fighter.y - nearestY) > 13 * fighter.scale) continue;
+        if (!chunkTouchesCircle(chunk, fighter.x, fighter.y, 13 * fighter.scale)) continue;
         chunk.hitFighters.add(fighter.id);
         fighter.vx += chunk.vx * Math.min(1.5, chunk.mass / Math.max(0.5, fighter.mass)) * 0.3;
         fighter.vy += chunk.vy * Math.min(1.5, chunk.mass / Math.max(0.5, fighter.mass)) * 0.3;

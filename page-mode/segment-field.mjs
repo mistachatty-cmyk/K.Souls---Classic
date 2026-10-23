@@ -71,6 +71,24 @@ export function chunkSilhouette(piece) {
   return area < piece.width * piece.height ? cells : null;
 }
 
+/** Circle contact against the same rotated cells drawn for a physical chunk. */
+export function chunkTouchesCircle(chunk, x, y, radius) {
+  if (!chunk || !finite(chunk.x, chunk.y, chunk.width, chunk.height, chunk.angle, x, y, radius)
+      || chunk.width <= 0 || chunk.height <= 0 || radius < 0) return false;
+  const dx = x - chunk.x, dy = y - chunk.y;
+  if (Math.hypot(dx, dy) > Math.hypot(chunk.width, chunk.height) / 2 + radius) return false;
+  const cos = Math.cos(chunk.angle), sin = Math.sin(chunk.angle);
+  const localX = dx * cos + dy * sin + chunk.width / 2;
+  const localY = -dx * sin + dy * cos + chunk.height / 2;
+  const cells = chunk.cells?.length ? chunk.cells : [{ x: 0, y: 0, width: chunk.width, height: chunk.height }];
+  for (const cell of cells) {
+    const nearestX = Math.max(cell.x, Math.min(localX, cell.x + cell.width));
+    const nearestY = Math.max(cell.y, Math.min(localY, cell.y + cell.height));
+    if ((localX - nearestX) ** 2 + (localY - nearestY) ** 2 <= radius ** 2) return true;
+  }
+  return false;
+}
+
 function detachUnsupportedCells(field) {
   if (field.removedCount < 4) return [];
   const total = field.cols * field.rows, visited = new Uint8Array(total), queue = [];

@@ -1,6 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyImpact, applySegmentImpact, chunkSilhouette, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects } from "./segment-field.mjs";
+import { applyImpact, applySegmentImpact, chunkSilhouette, chunkTouchesCircle, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects } from "./segment-field.mjs";
+
+test("a rotating chunk hits fighters only where a removed cell exists", () => {
+  const chunk = { x: 100, y: 100, width: 48, height: 48, angle: 0,
+    cells: [{ x: 16, y: 0, width: 16, height: 16 }, { x: 0, y: 16, width: 16, height: 16 }] };
+  assert.equal(chunkTouchesCircle(chunk, 81, 81, 4), false);
+  assert.equal(chunkTouchesCircle(chunk, 100, 81, 4), true);
+  chunk.angle = Math.PI / 2;
+  assert.equal(chunkTouchesCircle(chunk, 119, 100, 4), true);
+  assert.equal(chunkTouchesCircle(chunk, 119, 81, 4), false);
+  assert.equal(chunkTouchesCircle({ ...chunk, cells: undefined }, 100, 100, 4), true);
+});
 
 test("a broad glass burst keeps the detached cross instead of filling its corners", () => {
   const field = createSegmentField(96, 96, "glass");
