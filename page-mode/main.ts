@@ -20,7 +20,7 @@ import { captureDestructionState, snapshotOpeningRects, type DestructionState } 
 import { containedMediaPlacement, mediaMaskAlpha } from "./owned-media-fragments.mjs";
 import { captureVideoTimes, pauseVideos, resumeVideos, seekVideos, type VideoTime } from "./video-timeline.mjs";
 import { captureSceneField, restoreSceneField, savedVideoTime } from "./scene-state.mjs";
-import { creatorFloorTop, creatorStageBottom } from "./creator-stage.mjs";
+import { creatorFloorTop, creatorFragmentFloor, creatorStageBottom } from "./creator-stage.mjs";
 import { advanceHeldSpawns, HOLD_REPEAT_MS, startHeldSpawn, type HeldSpawn } from "./hold-repeat.mjs";
 
 type Variant = "classic" | "ks2";
@@ -31,7 +31,7 @@ type Projectile = { x: number; y: number; previousX: number; previousY: number; 
 type FloatingText = { x: number; y: number; value: string; color: string; life: number };
 type FractureMark = { segments: ReturnType<typeof createFracturePattern>; color: string; strength: number; createdAt: number };
 type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number; material?: PageMaterial; points?: Array<{ x: number; y: number }> };
-type ArenaChunk = { x: number; y: number; vx: number; vy: number; width: number; height: number; mass: number; angle: number; spin: number; material: PageMaterial; color: string; sourceTargetId: number; mediaX?: number; mediaY?: number; ownerTeam: number; hitFighters: Set<number>; secondaryBudget: number; life: number };
+type ArenaChunk = { x: number; y: number; vx: number; vy: number; width: number; height: number; mass: number; angle: number; spin: number; material: PageMaterial; color: string; sourceTargetId: number; mediaX?: number; mediaY?: number; stageFloorY?: number; ownerTeam: number; hitFighters: Set<number>; secondaryBudget: number; life: number };
 type Shockwave = { x: number; y: number; radius: number; maxRadius: number; life: number; maxLife: number; color: string; width: number };
 type Options = { variant?: Variant };
 type Settings = { npcSide: Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; matchDurationMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean; effectMode: "full" | "low"; destructionTempo: "adaptive" | "deep" };
@@ -779,8 +779,9 @@ class PageBattle {
   }
 
   stepChunks(dt: number, dtMs: number, targets: Target[]) {
-    const floor = Math.max(innerHeight, document.documentElement.scrollHeight) - 12;
+    const documentBottom = Math.max(innerHeight, document.documentElement.scrollHeight);
     for (const chunk of [...this.chunks]) {
+      const floor = creatorFragmentFloor(chunk.stageFloorY, documentBottom);
       chunk.vy += 0.26 * dt;
       chunk.x += chunk.vx * dt; chunk.y += chunk.vy * dt; chunk.angle += chunk.spin * dt;
       chunk.vx *= 0.993;
@@ -921,6 +922,7 @@ class PageBattle {
         vx: directionX * impulse + (Math.random() - 0.5) * 2, vy: directionY * impulse - 1,
         width: piece.width, height: piece.height, mass: piece.mass, angle: 0, spin: (Math.random() - 0.5) * 0.12,
         material: target.material, color, sourceTargetId: target.id, mediaX: target.dynamic ? piece.x : undefined, mediaY: target.dynamic ? piece.y : undefined,
+        stageFloorY: target.dynamic ? target.stageFloorY : undefined,
         ownerTeam, hitFighters: new Set(), secondaryBudget: 1, life: 4000 });
     }
   }
