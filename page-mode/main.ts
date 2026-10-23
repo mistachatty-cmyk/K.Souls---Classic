@@ -602,14 +602,14 @@ class PageBattle {
     }
   }
 
-  carveCreatorTarget(target: Target, x: number, y: number) {
+  carveCreatorTarget(target: Target, x: number, y: number, broad = false) {
     const status = this.panel.querySelector<HTMLElement>("[data-creator-status]");
     if (this.replayIndex !== null) { if (status) status.textContent = "Resume the live match before carving."; return; }
     if (target.destroyed) { if (status) status.textContent = "That prop is already broken. Rebuild it to carve again."; return; }
     const hitX = Math.max(target.x + 1, Math.min(target.x + target.width - 1, x));
     const hitY = Math.max(target.y + 1, Math.min(target.y + target.height - 1, y));
-    this.damageTarget(target, hitX, hitY, 1.25, "#9deeff", 3.5, 0, -1, 0);
-    if (status) status.textContent = "Carved the live physics prop. Keep striking to open it further.";
+    this.damageTarget(target, hitX, hitY, 1.25, "#9deeff", broad ? 5.5 : 3.5, broad ? 1 : 0, broad ? -0.6 : -1, 0, broad ? 1.7 : 1);
+    if (status) status.textContent = broad ? "Burst a wider piece from the live physics prop." : "Carved a precise opening in the live physics prop.";
   }
 
   rebuildScene() {
@@ -886,13 +886,14 @@ class PageBattle {
     this.screenShake *= Math.pow(0.08, dt);
   }
 
-  damageTarget(target: Target, x: number, y: number, amount: number, color: string, force: number, incomingX = 0, incomingY = -1, ownerTeam = 0) {
+  damageTarget(target: Target, x: number, y: number, amount: number, color: string, force: number, incomingX = 0, incomingY = -1, ownerTeam = 0, fieldScale = 1) {
     if (target.destroyed) return;
     const [directionX, directionY] = normalizeImpactDirection(incomingX, incomingY);
     const appliedDamage = materialDamage(amount, target.material);
     target.damage += appliedDamage;
     target.impactX = x; target.impactY = y; target.impactDX = directionX; target.impactDY = directionY; target.lastHitAt = performance.now();
-    this.applyLocalImpact(target, x, y, directionX, directionY, appliedDamage, ownerTeam, color, force);
+    // A creator burst can detach more cells without accelerating target HP loss or page-break scoring.
+    this.applyLocalImpact(target, x, y, directionX, directionY, appliedDamage * fieldScale, ownerTeam, color, force);
     this.recordFracture(target, x, y, directionX, directionY, appliedDamage, color);
     if (target.dynamic) { const impulse = impactImpulse(force); target.vx = (target.vx || 0) + directionX * impulse; target.vy = (target.vy || 0) + directionY * impulse; }
     this.shockwaves.push({ x, y, radius: 3, maxRadius: 16 + Math.min(32, force * 2.2), life: 220, maxLife: 220, color, width: 2 + Math.min(3, force * 0.12) });
@@ -1477,7 +1478,7 @@ class PageBattle {
     const npc = `<label>NPC opponent<input data-setting="npcEnabled" type="checkbox" ${settings.npcEnabled ? "checked" : ""}></label>`;
     if (name === "creator") {
       this.panel.innerHTML = `<div data-creator-head><h2>Creative Sandbox · Live Match</h2><button data-minimize>Minimize</button></div><p class="notice">These objects share the live match physics. Fighters collide with and break them; the page underneath is restored when you leave.</p><section><strong>Starter scenes</strong><div class="controls"><button data-scene="neon">Neon tiles</button><button data-scene="ruins">Rift ruins</button><button data-scene="garden">Sky garden</button></div></section><section><label>Add image or video<input data-upload type="file" accept="image/*,video/mp4,video/webm,video/ogg"></label></section><section><label>Match replay · scrub while paused<input data-timeline type="range" min="0" max="${Math.max(0, this.snapshots.length - 1)}" value="${this.replayIndex ?? Math.max(0, this.snapshots.length - 1)}"></label><small data-replay-time>${Math.ceil((this.snapshots[this.replayIndex ?? Math.max(0, this.snapshots.length - 1)]?.at || 0) / 1000)}s</small><label>Video playback position<input data-video-timeline type="range" min="0" max="0" value="0"></label></section><section class="controls"><button data-rebuild>Rebuild scene</button><button data-save>Save scene</button><button data-open-scene>Open latest scene</button><button data-export>Export arena still</button><button data-record>Record 8-second replay</button></section><p class="notice" data-creator-status role="status">Local media and scenes stay on this device. Drag props to place them. Video stays muted.</p>`;
-      this.panel.querySelector("[data-creator-head]")?.insertAdjacentHTML("afterend", `<section><strong>Impact tool</strong><div class="controls"><button data-impact-mode aria-pressed="${this.creatorImpactMode}" data-active="${this.creatorImpactMode}">${this.creatorImpactMode ? "Carve on tap · On" : "Carve on tap · Off"}</button><button data-impact-latest>Carve latest prop</button></div><p class="notice">Tap a placed prop to carve at that point, or use the button to strike its center. Turn off to drag props again. Video controls remain usable.</p></section>`);
+      this.panel.querySelector("[data-creator-head]")?.insertAdjacentHTML("afterend", `<section><strong>Impact tool</strong><div class="controls"><button data-impact-mode aria-pressed="${this.creatorImpactMode}" data-active="${this.creatorImpactMode}">${this.creatorImpactMode ? "Carve on tap · On" : "Carve on tap · Off"}</button><button data-impact-latest>Burst latest prop</button></div><p class="notice">Tap a placed prop for a precise opening, or burst a wider piece from the latest prop. Turn off to drag props again. Video controls remain usable.</p></section>`);
       this.panel.querySelector("[data-minimize]")?.addEventListener("click", () => { this.panel.dataset.minimized = "true"; });
       this.panel.querySelector<HTMLButtonElement>("[data-impact-mode]")?.addEventListener("click", event => {
         this.creatorImpactMode = !this.creatorImpactMode;
@@ -1490,7 +1491,7 @@ class PageBattle {
       });
       this.panel.querySelector("[data-impact-latest]")?.addEventListener("click", () => {
         const target = [...this.targets.values()].reverse().find(candidate => candidate.dynamic && !candidate.destroyed);
-        if (target) this.carveCreatorTarget(target, target.x + target.width / 2, target.y + target.height / 2);
+        if (target) this.carveCreatorTarget(target, target.x + target.width / 2, target.y + target.height / 2, true);
         else this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Add or rebuild a prop before carving.";
       });
       this.panel.querySelectorAll<HTMLButtonElement>("[data-scene]").forEach(button => button.addEventListener("click", () => { this.addStarterScene(button.dataset.scene || "neon"); this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Starter props added to the live physics world."; }));
