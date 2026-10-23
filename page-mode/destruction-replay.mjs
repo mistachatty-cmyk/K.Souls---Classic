@@ -1,3 +1,5 @@
+import { MAX_CHUNK_SILHOUETTE_CELLS } from "./segment-field.mjs";
+
 /** Compact, immutable samples for the in-match timeline. No DOM nodes or media are stored. */
 export function captureDestructionState(targets, areas, chunks) {
   const fields = [];
@@ -12,7 +14,8 @@ export function captureDestructionState(targets, areas, chunks) {
     fields,
     areas: areas.slice(-256).map(area => ({ ...area })),
     chunks: chunks.slice(-48).map(chunk => ({ x: chunk.x, y: chunk.y, width: chunk.width, height: chunk.height, angle: chunk.angle, material: chunk.material, color: chunk.color,
-      sourceTargetId: chunk.sourceTargetId, mediaX: chunk.mediaX, mediaY: chunk.mediaY })),
+      sourceTargetId: chunk.sourceTargetId, mediaX: chunk.mediaX, mediaY: chunk.mediaY,
+      cells: chunk.cells?.length <= MAX_CHUNK_SILHOUETTE_CELLS ? chunk.cells.map(cell => ({ ...cell })) : undefined })),
   };
 }
 

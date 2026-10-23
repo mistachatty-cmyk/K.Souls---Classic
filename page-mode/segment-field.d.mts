@@ -5,6 +5,8 @@ export type SegmentRect = { x: number; y: number; width: number; height: number 
 export type DetachedChunk = SegmentRect & { mass: number; cells: SegmentRect[] };
 export type ImpactInput = { targetId: number; x: number; y: number; directionX: number; directionY: number; damage: number };
 export const DESTRUCTION_WORLD_VERSION: 1;
+export const MAX_CHUNK_SILHOUETTE_CELLS: 32;
+export function chunkSilhouette(piece: DetachedChunk): SegmentRect[] | null;
 export function applyImpact(field: SegmentField | null, impact: ImpactInput): { version: 1; targetId: number; removedCells: SegmentRect[]; openings: SegmentRect[]; detachedChunks: DetachedChunk[]; wholeTargetBreak: boolean };
 export function createSegmentField(width: number, height: number, material: PageMaterial, cellSize?: number, maxCells?: number): SegmentField | null;
 export function applySegmentImpact(field: SegmentField | null, x: number, y: number, directionX: number, directionY: number, damage: number): { removedCells: SegmentRect[] };

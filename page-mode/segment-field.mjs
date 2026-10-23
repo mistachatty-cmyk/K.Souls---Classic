@@ -54,6 +54,22 @@ export function applySegmentImpact(field, x, y, directionX, directionY, damage) 
 }
 
 export const DESTRUCTION_WORLD_VERSION = 1;
+export const MAX_CHUNK_SILHOUETTE_CELLS = 32;
+
+/** Target-local removed cells become bounded rects relative to a chunk's top-left. */
+export function chunkSilhouette(piece) {
+  if (!piece || !Array.isArray(piece.cells) || piece.cells.length < 2 || piece.cells.length > MAX_CHUNK_SILHOUETTE_CELLS
+      || !finite(piece.x, piece.y, piece.width, piece.height) || piece.width <= 0 || piece.height <= 0) return null;
+  let area = 0;
+  const cells = [];
+  for (const cell of piece.cells) {
+    if (!cell || !finite(cell.x, cell.y, cell.width, cell.height) || cell.width <= 0 || cell.height <= 0
+        || cell.x < piece.x || cell.y < piece.y || cell.x + cell.width > piece.x + piece.width || cell.y + cell.height > piece.y + piece.height) return null;
+    area += cell.width * cell.height;
+    cells.push({ x: cell.x - piece.x, y: cell.y - piece.y, width: cell.width, height: cell.height });
+  }
+  return area < piece.width * piece.height ? cells : null;
+}
 
 function detachUnsupportedCells(field) {
   if (field.removedCount < 4) return [];

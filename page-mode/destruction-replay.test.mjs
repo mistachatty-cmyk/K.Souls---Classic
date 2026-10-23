@@ -8,14 +8,16 @@ test("paused replay retains the opening and chunk positions from each sample", (
   const target = { id: 7, x: 100, y: 200, width: 64, height: 64, field, destroyed: false };
   const early = captureDestructionState([target], [], []);
   const hit = applyImpact(field, { targetId: 7, x: 24, y: 24, directionX: 1, directionY: 0, damage: 2 });
-  const chunk = { x: 130, y: 230, width: 16, height: 16, angle: 0.2, material: "digital", color: "#fff", sourceTargetId: 7, mediaX: 16, mediaY: 16 };
+  const cells = [{ x: 0, y: 16, width: 16, height: 16 }, { x: 16, y: 16, width: 16, height: 16 }];
+  const chunk = { x: 130, y: 230, width: 48, height: 48, angle: 0.2, material: "digital", color: "#fff", sourceTargetId: 7, mediaX: 16, mediaY: 16, cells };
   const late = captureDestructionState([target], [], [chunk]);
-  chunk.x = 300;
+  chunk.x = 300; cells[0].x = 99;
   applyImpact(field, { targetId: 7, x: 40, y: 40, directionX: 1, directionY: 0, damage: 3 });
   assert.equal(early.fields.length, 0);
   assert.equal(late.chunks[0].x, 130);
   assert.equal(late.chunks[0].sourceTargetId, 7);
   assert.equal(late.chunks[0].mediaX, 16);
+  assert.equal(late.chunks[0].cells[0].x, 0);
   assert.deepEqual(snapshotOpeningRects(late.fields[0]).map(rect => [rect.x, rect.y]), hit.openings.map(rect => [100 + rect.x, 200 + rect.y]));
 });
 

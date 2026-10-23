@@ -1,6 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyImpact, applySegmentImpact, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects } from "./segment-field.mjs";
+import { applyImpact, applySegmentImpact, chunkSilhouette, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects } from "./segment-field.mjs";
+
+test("a broad glass burst keeps the detached cross instead of filling its corners", () => {
+  const field = createSegmentField(96, 96, "glass");
+  const result = applyImpact(field, { targetId: 1, x: 40, y: 40, directionX: 1, directionY: -0.6, damage: 3 });
+  const piece = result.detachedChunks.find(chunk => chunk.cells.length > 1);
+  assert.ok(piece);
+  const cells = chunkSilhouette(piece);
+  assert.equal(cells?.length, 5);
+  assert.equal(cells.reduce((area, cell) => area + cell.width * cell.height, 0), 5 * 16 * 16);
+  assert.equal(piece.width * piece.height, 9 * 16 * 16);
+  assert.equal(cells.some(cell => cell.x === 0 && cell.y === 0), false);
+  assert.equal(chunkSilhouette({ ...piece, cells: Array.from({ length: 33 }, () => piece.cells[0]) }), null);
+});
 
 test("repeated local impacts open only their own part of a live target", () => {
   const field = createSegmentField(64, 64, "digital");

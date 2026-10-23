@@ -14,7 +14,7 @@ import { createGlassShardPolygons } from "./glass-shards.mjs";
 import { createPaperTearPolygons } from "./paper-shards.mjs";
 import { createStoneChipPolygons } from "./stone-chips.mjs";
 import { createDigitalTearBlocks } from "./digital-tear.mjs";
-import { applyImpact, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField } from "./segment-field.mjs";
+import { applyImpact, chunkSilhouette, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField, type SegmentRect } from "./segment-field.mjs";
 import { sortTargetsFrontFirst, underlyingTargetForPoint, descendantLayersByElement, visibleOpeningRects, openingLayerRects } from "./layers.mjs";
 import { captureDestructionState, snapshotOpeningRects, type DestructionState } from "./destruction-replay.mjs";
 import { containedMediaPlacement, mediaMaskAlpha } from "./owned-media-fragments.mjs";
@@ -31,7 +31,7 @@ type Projectile = { x: number; y: number; previousX: number; previousY: number; 
 type FloatingText = { x: number; y: number; value: string; color: string; life: number };
 type FractureMark = { segments: ReturnType<typeof createFracturePattern>; color: string; strength: number; createdAt: number };
 type ArenaShard = { x: number; y: number; vx: number; vy: number; width: number; height: number; angle: number; spin: number; color: string; life: number; maxLife: number; material?: PageMaterial; points?: Array<{ x: number; y: number }> };
-type ArenaChunk = { x: number; y: number; vx: number; vy: number; width: number; height: number; mass: number; angle: number; spin: number; material: PageMaterial; color: string; sourceTargetId: number; mediaX?: number; mediaY?: number; stageFloorY?: number; ownerTeam: number; hitFighters: Set<number>; secondaryBudget: number; life: number };
+type ArenaChunk = { x: number; y: number; vx: number; vy: number; width: number; height: number; mass: number; angle: number; spin: number; material: PageMaterial; color: string; sourceTargetId: number; mediaX?: number; mediaY?: number; cells?: SegmentRect[]; stageFloorY?: number; ownerTeam: number; hitFighters: Set<number>; secondaryBudget: number; life: number };
 type Shockwave = { x: number; y: number; radius: number; maxRadius: number; life: number; maxLife: number; color: string; width: number };
 type Options = { variant?: Variant };
 type Settings = { npcSide: Side; motion: "battle" | "dvd"; modifier: string; environment: string; theme: string; weapon: string; speed: number; spawnMs: number; matchDurationMs: number; displayHp: boolean; fighter: string; npcEnabled: boolean; effectMode: "full" | "low"; destructionTempo: "adaptive" | "deep" };
@@ -946,7 +946,7 @@ class PageBattle {
         vx: directionX * impulse + (Math.random() - 0.5) * 2, vy: directionY * impulse - 1,
         width: piece.width, height: piece.height, mass: piece.mass, angle: 0, spin: (Math.random() - 0.5) * 0.12,
         material: target.material, color, sourceTargetId: target.id, mediaX: target.dynamic ? piece.x : undefined, mediaY: target.dynamic ? piece.y : undefined,
-        stageFloorY: target.dynamic ? target.stageFloorY : undefined,
+        cells: chunkSilhouette(piece) ?? undefined, stageFloorY: target.dynamic ? target.stageFloorY : undefined,
         ownerTeam, hitFighters: new Set(), secondaryBudget: 1, life: 4000 });
     }
     this.host.dataset.activeChunks = String(this.chunks.length);
@@ -1354,7 +1354,13 @@ class PageBattle {
       if (chunk.x + chunk.width < scrollX || chunk.x - chunk.width > scrollX + innerWidth || chunk.y + chunk.height < scrollY || chunk.y - chunk.height > scrollY + innerHeight) continue;
       ctx.save(); ctx.translate(chunk.x, chunk.y); ctx.rotate(chunk.angle);
       const depth = chunk.material === "stone" ? 5 : chunk.material === "glass" ? 3 : 2;
-      ctx.fillStyle = "rgba(2,5,14,.28)"; ctx.fillRect(-chunk.width / 2 + 5, -chunk.height / 2 + 7, chunk.width, chunk.height);
+      const outline = () => {
+        ctx.beginPath();
+        if (chunk.cells?.length) for (const cell of chunk.cells) ctx.rect(cell.x - chunk.width / 2, cell.y - chunk.height / 2, cell.width, cell.height);
+        else ctx.rect(-chunk.width / 2, -chunk.height / 2, chunk.width, chunk.height);
+      };
+      ctx.save(); ctx.translate(5, 7); outline(); ctx.fillStyle = "rgba(2,5,14,.28)"; ctx.fill(); ctx.restore();
+      outline(); ctx.clip();
       ctx.fillStyle = chunk.material === "paper" ? "#e9deca" : chunk.material === "stone" ? "#747f91" : chunk.material === "glass" ? "#a6e7f2" : "#1c3044";
       ctx.fillRect(-chunk.width / 2, -chunk.height / 2, chunk.width, chunk.height);
       const source = chunk.sourceTargetId === undefined ? undefined : chunkSources.get(chunk.sourceTargetId);
@@ -1374,7 +1380,7 @@ class PageBattle {
       }
       ctx.fillStyle = this.variant === "classic" ? "#ad5835" : "#61509f";
       ctx.fillRect(-chunk.width / 2, chunk.height / 2 - depth, chunk.width, depth);
-      ctx.strokeStyle = chunk.color; ctx.lineWidth = 1; ctx.strokeRect(-chunk.width / 2, -chunk.height / 2, chunk.width, chunk.height);
+      outline(); ctx.strokeStyle = chunk.color; ctx.lineWidth = 1; ctx.stroke();
       ctx.restore();
     }
     for (const shard of this.shards) {
