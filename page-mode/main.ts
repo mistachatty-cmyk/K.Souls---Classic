@@ -99,6 +99,7 @@ class PageBattle {
   completedRun = false;
   rightControlUntil = 0;
   minimized = false;
+  creatorImpactMode = false;
   snapshots: Array<{ at: number; fighters: Array<{ id: number; x: number; y: number; angle: number }>; score: number; kos: Record<Side, number>; videos: VideoTime[]; destruction: DestructionState }> = [];
   snapshotAt = 0;
   replayIndex: number | null = null;
@@ -119,6 +120,7 @@ class PageBattle {
     this.host = document.createElement("div");
     this.host.id = "lok-kinetic-official-page";
     this.host.dataset.variant = variant;
+    this.host.dataset.activeChunks = "0";
     this.host.style.cssText = "position:fixed;inset:0;z-index:2147483645;pointer-events:none";
     this.root = this.host.attachShadow({ mode: "open" });
     this.root.innerHTML = `<style>
@@ -572,7 +574,14 @@ class PageBattle {
     const target: Target = { id: this.nextTargetId++, element, x, y, width, height, damage: 0, destroyed: false, impactX: x + width / 2, impactY: y + height / 2, impactDX: 0, impactDY: -1, lastHitAt: 0, boss: false, stage: 0, material: classifyPageMaterial(element.tagName, true), fractures: [], dynamic: true, vx: (Math.random() - .5) * 3, vy: -2, homeX: x, homeY: y, stageFloorY, homeStageFloorY: stageFloorY };
     this.targets.set(element, target);
     let drag: { px: number; py: number; x: number; y: number } | null = null;
-    element.addEventListener("pointerdown", event => { if (element instanceof HTMLVideoElement && event.offsetY > element.clientHeight - 42) return; drag = { px: event.clientX, py: event.clientY, x: target.x, y: target.y }; element.setPointerCapture(event.pointerId); element.style.cursor = "grabbing"; event.preventDefault(); });
+    element.addEventListener("pointerdown", event => { if (element instanceof HTMLVideoElement && event.offsetY > element.clientHeight - 42) return;
+      if (this.creatorImpactMode) { event.preventDefault(); this.carveCreatorTarget(target, event.clientX + scrollX, event.clientY + scrollY); return; }
+      drag = { px: event.clientX, py: event.clientY, x: target.x, y: target.y }; element.setPointerCapture(event.pointerId); element.style.cursor = "grabbing"; event.preventDefault(); });
+    if (element instanceof HTMLVideoElement) element.addEventListener("click", event => {
+      if (!this.creatorImpactMode || event.offsetY > element.clientHeight - 42) return;
+      event.preventDefault(); event.stopPropagation();
+      if (this.paused) element.pause();
+    });
     element.addEventListener("pointermove", event => { if (!drag) return; target.x = drag.x + event.clientX - drag.px; target.y = drag.y + event.clientY - drag.py; target.vx = target.vy = 0; element.style.left = `${target.x}px`; element.style.top = `${target.y}px`; });
     const release = () => { if (drag) target.stageFloorY = creatorStageBottom(target.y, target.height, scrollY + innerHeight, Math.max(innerHeight, document.documentElement.scrollHeight)); drag = null; element.style.cursor = "grab"; };
     element.addEventListener("pointerup", release); element.addEventListener("pointercancel", release);
@@ -593,11 +602,22 @@ class PageBattle {
     }
   }
 
+  carveCreatorTarget(target: Target, x: number, y: number) {
+    const status = this.panel.querySelector<HTMLElement>("[data-creator-status]");
+    if (this.replayIndex !== null) { if (status) status.textContent = "Resume the live match before carving."; return; }
+    if (target.destroyed) { if (status) status.textContent = "That prop is already broken. Rebuild it to carve again."; return; }
+    const hitX = Math.max(target.x + 1, Math.min(target.x + target.width - 1, x));
+    const hitY = Math.max(target.y + 1, Math.min(target.y + target.height - 1, y));
+    this.damageTarget(target, hitX, hitY, 1.25, "#9deeff", 3.5, 0, -1, 0);
+    if (status) status.textContent = "Carved the live physics prop. Keep striking to open it further.";
+  }
+
   rebuildScene() {
     this.replayIndex = null;
     this.damage.length = 0;
     this.shards = [];
     this.chunks = [];
+    this.host.dataset.activeChunks = "0";
     for (const target of this.targets.values()) {
       target.damage = 0; target.destroyed = false; target.stage = 0; target.lastHitAt = 0; target.fractures = []; target.field = undefined;
       if (target.dynamic) { target.x = target.homeX ?? target.x; target.y = target.homeY ?? target.y; target.stageFloorY = target.homeStageFloorY ?? target.stageFloorY; target.vx = target.vy = 0; const el = target.element as HTMLElement; el.style.display = ""; el.style.visibility = ""; el.style.maskImage = ""; el.style.removeProperty("-webkit-mask-image"); el.style.left = `${target.x}px`; el.style.top = `${target.y}px`; }
@@ -628,6 +648,7 @@ class PageBattle {
     const replacedIds = new Set([...this.targets.values()].filter(target => target.dynamic).map(target => target.id));
     this.damage = this.damage.filter(area => !replacedIds.has(area.targetId));
     this.chunks = this.chunks.filter(chunk => !replacedIds.has(chunk.sourceTargetId));
+    this.host.dataset.activeChunks = String(this.chunks.length);
     for (const t of this.targets.values()) if (t.dynamic) { this.targets.delete(t.element); const media = t.element as HTMLImageElement | HTMLVideoElement; if (media instanceof HTMLVideoElement) media.pause(); if (media.src?.startsWith("blob:")) URL.revokeObjectURL(media.src); t.element.remove(); }
     this.activeVideo = null;
     this.replayIndex = null; this.snapshots = []; this.snapshotAt = performance.now();
@@ -686,6 +707,7 @@ class PageBattle {
   rematch() {
     this.rebuildScene(); this.fighters = []; this.projectiles = []; this.teamKOs = { 1: 0, 2: 0 }; this.score = 0; this.kills = 0; this.chainBreaks = 0;
     this.breakCombo = 0; this.comboUntil = 0; this.shockwaves = []; this.chunks = [];
+    this.host.dataset.activeChunks = "0";
     this.matchDurationMs = settings.matchDurationMs; this.matchDestructionTempo = settings.destructionTempo; this.remainingMs = this.matchDurationMs; this.matchFinished = false; this.completedRun = false; this.runId = createRunId();
     this.matchNpcSide = settings.npcSide; this.rightControlUntil = 0; this.paused = false; this.npcAt = performance.now() + 900;
     this.snapshots = []; this.snapshotAt = performance.now(); this.replayIndex = null;
@@ -817,6 +839,7 @@ class PageBattle {
       chunk.life -= dtMs;
     }
     this.chunks = this.chunks.filter(chunk => chunk.life > 0).slice(-48);
+    this.host.dataset.activeChunks = String(this.chunks.length);
   }
 
   updateEffects(dt: number, dtMs: number) {
@@ -925,6 +948,7 @@ class PageBattle {
         stageFloorY: target.dynamic ? target.stageFloorY : undefined,
         ownerTeam, hitFighters: new Set(), secondaryBudget: 1, life: 4000 });
     }
+    this.host.dataset.activeChunks = String(this.chunks.length);
   }
 
   updateDynamicMask(target: Target) {
@@ -1439,8 +1463,8 @@ class PageBattle {
   action(name: string) {
     if (name === "exit") { this.stop(); return; }
     if (name === "pause") { if (this.matchFinished) return; this.paused = !this.paused; if (this.paused) pauseVideos([...this.targets.values()]); else { this.replayIndex = null; this.showReplayVideos(null); resumeVideos([...this.targets.values()]); } (this.root.querySelector('[data-action="pause"]') as HTMLElement).textContent = this.paused ? "Resume" : "Pause"; return; }
-    if (name === "close" || (this.panel.dataset.open === "true" && this.panel.dataset.view === name)) { this.panel.dataset.open = "false"; return; }
     if (name === "creator" && this.panel.dataset.view === "creator" && this.panel.dataset.open === "true") { this.panel.dataset.minimized = this.panel.dataset.minimized === "true" ? "false" : "true"; return; }
+    if (name === "close" || (this.panel.dataset.open === "true" && this.panel.dataset.view === name)) { this.panel.dataset.open = "false"; return; }
     this.panel.dataset.view = name; this.panel.dataset.open = "true"; this.panel.dataset.minimized = "false";
     const optionLabel = (option: string, key: keyof Settings) => {
       const label = ({ none: "None", sudden_death: "Sudden Death", shrinking_arena: "Shrinking Arena", lok_bounty: "LoK Bounty", titans: "Titans", vampire_kiss: "Vampire's Kiss", time_distortion: "Time Distortion", chaos_vortex: "Chaos Vortex", gravity_well: "Gravity Well", melee_mash: "Melee Mash", ranged_test: "Ranged Test", blackhole: "Black Hole", gameboy: "Game Boy", paper_sketch: "Paper Sketch", wireframe_matrix: "Wireframe Matrix", blood_moon: "Blood Moon", runesite_ultimate: "Runesite Ultimate", neon_abyss: "Neon Abyss", rgb_cycle: "RGB Cycle", glassmorphism: "Glassmorphism", celestial_forge: "Celestial Forge", neon_overdrive: "Neon Overdrive", matrix_reloaded: "Matrix Reloaded", stellar_drift: "Stellar Drift", neon_pulse: "Neon Pulse", obsidian_shard: "Obsidian Shard", retro_wave: "Retro Wave", pixel_dream: "Pixel Dream", lava: "Lava Floor", storm: "Storm", blackout: "Blackout" } as Record<string, string>)[option] || option.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
@@ -1453,7 +1477,22 @@ class PageBattle {
     const npc = `<label>NPC opponent<input data-setting="npcEnabled" type="checkbox" ${settings.npcEnabled ? "checked" : ""}></label>`;
     if (name === "creator") {
       this.panel.innerHTML = `<div data-creator-head><h2>Creative Sandbox · Live Match</h2><button data-minimize>Minimize</button></div><p class="notice">These objects share the live match physics. Fighters collide with and break them; the page underneath is restored when you leave.</p><section><strong>Starter scenes</strong><div class="controls"><button data-scene="neon">Neon tiles</button><button data-scene="ruins">Rift ruins</button><button data-scene="garden">Sky garden</button></div></section><section><label>Add image or video<input data-upload type="file" accept="image/*,video/mp4,video/webm,video/ogg"></label></section><section><label>Match replay · scrub while paused<input data-timeline type="range" min="0" max="${Math.max(0, this.snapshots.length - 1)}" value="${this.replayIndex ?? Math.max(0, this.snapshots.length - 1)}"></label><small data-replay-time>${Math.ceil((this.snapshots[this.replayIndex ?? Math.max(0, this.snapshots.length - 1)]?.at || 0) / 1000)}s</small><label>Video playback position<input data-video-timeline type="range" min="0" max="0" value="0"></label></section><section class="controls"><button data-rebuild>Rebuild scene</button><button data-save>Save scene</button><button data-open-scene>Open latest scene</button><button data-export>Export arena still</button><button data-record>Record 8-second replay</button></section><p class="notice" data-creator-status role="status">Local media and scenes stay on this device. Drag props to place them. Video stays muted.</p>`;
+      this.panel.querySelector("[data-creator-head]")?.insertAdjacentHTML("afterend", `<section><strong>Impact tool</strong><div class="controls"><button data-impact-mode aria-pressed="${this.creatorImpactMode}" data-active="${this.creatorImpactMode}">${this.creatorImpactMode ? "Carve on tap · On" : "Carve on tap · Off"}</button><button data-impact-latest>Carve latest prop</button></div><p class="notice">Tap a placed prop to carve at that point, or use the button to strike its center. Turn off to drag props again. Video controls remain usable.</p></section>`);
       this.panel.querySelector("[data-minimize]")?.addEventListener("click", () => { this.panel.dataset.minimized = "true"; });
+      this.panel.querySelector<HTMLButtonElement>("[data-impact-mode]")?.addEventListener("click", event => {
+        this.creatorImpactMode = !this.creatorImpactMode;
+        const button = event.currentTarget as HTMLButtonElement;
+        button.setAttribute("aria-pressed", String(this.creatorImpactMode)); button.dataset.active = String(this.creatorImpactMode);
+        button.textContent = this.creatorImpactMode ? "Carve on tap · On" : "Carve on tap · Off";
+        const creatorButton = this.root.querySelector<HTMLButtonElement>('[data-action="creator"]');
+        if (creatorButton) { creatorButton.textContent = this.creatorImpactMode ? "Creative Sandbox · Carve" : "Creative Sandbox"; creatorButton.dataset.active = String(this.creatorImpactMode); }
+        this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = this.creatorImpactMode ? "Tap a prop to carve it. Turn off to drag." : "Drag props to place them.";
+      });
+      this.panel.querySelector("[data-impact-latest]")?.addEventListener("click", () => {
+        const target = [...this.targets.values()].reverse().find(candidate => candidate.dynamic && !candidate.destroyed);
+        if (target) this.carveCreatorTarget(target, target.x + target.width / 2, target.y + target.height / 2);
+        else this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Add or rebuild a prop before carving.";
+      });
       this.panel.querySelectorAll<HTMLButtonElement>("[data-scene]").forEach(button => button.addEventListener("click", () => { this.addStarterScene(button.dataset.scene || "neon"); this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Starter props added to the live physics world."; }));
       this.panel.querySelector<HTMLInputElement>("[data-upload]")?.addEventListener("change", event => { const file = (event.currentTarget as HTMLInputElement).files?.[0]; if (!file) return; if (!file.type.startsWith("image/") && !["video/mp4", "video/webm", "video/ogg"].includes(file.type)) { this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Choose an image, MP4, WebM, or Ogg video."; return; } if (file.size > 120 * 1024 * 1024) { this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = "Choose a file smaller than 120 MB."; return; } const media = document.createElement(file.type.startsWith("video/") ? "video" : "img") as HTMLImageElement | HTMLVideoElement; media.src = URL.createObjectURL(file); media.setAttribute("aria-label", file.name); if (media instanceof HTMLVideoElement) { this.activeVideo = media; media.controls = true; media.muted = true; media.loop = true; media.playsInline = true; media.addEventListener("loadedmetadata", () => this.syncVideoTimeline()); media.addEventListener("timeupdate", () => this.syncVideoTimeline()); } this.addSandboxObject(media); if (media instanceof HTMLVideoElement && !this.paused) void media.play().catch(() => {}); this.panel.querySelector<HTMLElement>("[data-creator-status]")!.textContent = `${file.name} added as a movable physics target.`; });
       this.panel.querySelector<HTMLInputElement>("[data-video-timeline]")?.addEventListener("input", event => { if (this.activeVideo) this.activeVideo.currentTime = Number((event.currentTarget as HTMLInputElement).value); });
