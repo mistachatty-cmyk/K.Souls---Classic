@@ -15,7 +15,7 @@ import { createPaperTearPolygons } from "./paper-shards.mjs";
 import { createStoneChipPolygons } from "./stone-chips.mjs";
 import { createDigitalTearBlocks } from "./digital-tear.mjs";
 import { applyImpact, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField } from "./segment-field.mjs";
-import { sortTargetsFrontFirst, underlyingTargetForPoint } from "./layers.mjs";
+import { sortTargetsFrontFirst, underlyingTargetForPoint, descendantLayersByElement, visibleOpeningRects } from "./layers.mjs";
 import { captureDestructionState, snapshotOpeningRects, type DestructionState } from "./destruction-replay.mjs";
 import { containedMediaPlacement, mediaMaskAlpha } from "./owned-media-fragments.mjs";
 import { captureVideoTimes, pauseVideos, resumeVideos, seekVideos, type VideoTime } from "./video-timeline.mjs";
@@ -1098,16 +1098,19 @@ class PageBattle {
       const arenaRects: Array<{ x: number; y: number; width: number; height: number }> = [];
       const colorCache = new Map<Target, string>();
       const targetsById = new Map([...renderTargets.values()].map(target => [target.id, target]));
+      const descendants = descendantLayersByElement(renderTargets);
       const addOpening = (target: Target, x: number, y: number, width: number, height: number) => {
-        const under = underlyingTargetForPoint(target, renderTargets, x + width / 2, y + height / 2);
-        if (!under) { arenaRects.push({ x, y, width, height }); return; }
-        let color = colorCache.get(under);
-        if (!color) {
-          const background = getComputedStyle(under.element).backgroundColor;
-          color = background && background !== "transparent" && background !== "rgba(0, 0, 0, 0)" ? background : under.material === "paper" ? "#e9e0ce" : under.material === "stone" ? "#303543" : "#1a2234";
-          colorCache.set(under, color);
+        for (const rect of visibleOpeningRects(target, descendants, { x, y, width, height })) {
+          const under = underlyingTargetForPoint(target, renderTargets, rect.x + rect.width / 2, rect.y + rect.height / 2);
+          if (!under) { arenaRects.push(rect); continue; }
+          let color = colorCache.get(under);
+          if (!color) {
+            const background = getComputedStyle(under.element).backgroundColor;
+            color = background && background !== "transparent" && background !== "rgba(0, 0, 0, 0)" ? background : under.material === "paper" ? "#e9e0ce" : under.material === "stone" ? "#303543" : "#1a2234";
+            colorCache.set(under, color);
+          }
+          covers.push({ ...rect, color });
         }
-        covers.push({ x, y, width, height, color });
       };
       for (const area of damageAreas) {
         if (area.x + area.width < scrollX || area.y + area.height < scrollY || area.x > scrollX + innerWidth || area.y > scrollY + innerHeight) continue;
