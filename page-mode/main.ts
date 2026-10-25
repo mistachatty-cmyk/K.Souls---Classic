@@ -608,7 +608,10 @@ class PageBattle {
     if (target.destroyed) { if (status) status.textContent = "That prop is already broken. Rebuild it to carve again."; return; }
     const hitX = Math.max(target.x + 1, Math.min(target.x + target.width - 1, x));
     const hitY = Math.max(target.y + 1, Math.min(target.y + target.height - 1, y));
-    this.damageTarget(target, hitX, hitY, 1.25, "#9deeff", broad ? 5.5 : 3.5, broad ? 1 : 0, broad ? -0.6 : -1, 0, broad ? 1.7 : 1);
+    const sourceVx = target.vx, sourceVy = target.vy;
+    this.damageTarget(target, hitX, hitY, 1.25, "#9deeff", broad ? 11 : 3.5, broad ? 1 : 0, broad ? -0.6 : -1, 0, broad ? 1.7 : 1);
+    // A neutral burst launches the fragment without dragging its source along.
+    if (broad) { target.vx = sourceVx; target.vy = sourceVy; }
     if (status) status.textContent = broad ? "Burst a wider piece from the live physics prop." : "Carved a precise opening in the live physics prop.";
   }
 
