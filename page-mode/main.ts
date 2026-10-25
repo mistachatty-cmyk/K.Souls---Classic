@@ -1354,16 +1354,17 @@ class PageBattle {
     }
     for (const state of restore) { state.fighter.x = state.x; state.fighter.y = state.y; state.fighter.angle = state.angle; }
     const chunkSources = new Map([...this.targets.values()].filter(target => target.dynamic).map(target => [target.id, target]));
-    if (effects.animated) for (const chunk of replay?.destruction.chunks ?? this.chunks) {
+    // Physical chunks can hit fighters, so they stay visible in Reduced Motion.
+    for (const chunk of replay?.destruction.chunks ?? this.chunks) {
       if (chunk.x + chunk.width < scrollX || chunk.x - chunk.width > scrollX + innerWidth || chunk.y + chunk.height < scrollY || chunk.y - chunk.height > scrollY + innerHeight) continue;
-      ctx.save(); ctx.translate(chunk.x, chunk.y); ctx.rotate(chunk.angle);
+      ctx.save(); ctx.translate(chunk.x, chunk.y); if (effects.animated) ctx.rotate(chunk.angle);
       const depth = chunk.material === "stone" ? 5 : chunk.material === "glass" ? 3 : 2;
       const outline = () => {
         ctx.beginPath();
         if (chunk.cells?.length) for (const cell of chunk.cells) ctx.rect(cell.x - chunk.width / 2, cell.y - chunk.height / 2, cell.width, cell.height);
         else ctx.rect(-chunk.width / 2, -chunk.height / 2, chunk.width, chunk.height);
       };
-      ctx.save(); ctx.translate(5, 7); outline(); ctx.fillStyle = "rgba(2,5,14,.28)"; ctx.fill(); ctx.restore();
+      if (effects.animated) { ctx.save(); ctx.translate(5, 7); outline(); ctx.fillStyle = "rgba(2,5,14,.28)"; ctx.fill(); ctx.restore(); }
       outline(); ctx.clip();
       ctx.fillStyle = chunk.material === "paper" ? "#e9deca" : chunk.material === "stone" ? "#747f91" : chunk.material === "glass" ? "#a6e7f2" : "#1c3044";
       ctx.fillRect(-chunk.width / 2, -chunk.height / 2, chunk.width, chunk.height);
@@ -1382,8 +1383,10 @@ class PageBattle {
           ctx.restore();
         }
       }
-      ctx.fillStyle = this.variant === "classic" ? "#ad5835" : "#61509f";
-      ctx.fillRect(-chunk.width / 2, chunk.height / 2 - depth, chunk.width, depth);
+      if (effects.animated) {
+        ctx.fillStyle = this.variant === "classic" ? "#ad5835" : "#61509f";
+        ctx.fillRect(-chunk.width / 2, chunk.height / 2 - depth, chunk.width, depth);
+      }
       outline(); ctx.strokeStyle = chunk.color; ctx.lineWidth = 1; ctx.stroke();
       ctx.restore();
     }
