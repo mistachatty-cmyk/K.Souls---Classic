@@ -15,6 +15,7 @@ import { createPaperTearPolygons } from "./paper-shards.mjs";
 import { createStoneChipPolygons } from "./stone-chips.mjs";
 import { createDigitalTearBlocks } from "./digital-tear.mjs";
 import { applyImpact, chunkSilhouette, chunkTargetContact, chunkTouchesCircle, createSegmentField, isSegmentSolid, resolveSegmentContact, segmentOpeningRects, type SegmentField, type SegmentRect } from "./segment-field.mjs";
+import { countDestructionWork } from "./frame-diagnostics.mjs";
 import { sortTargetsFrontFirst, underlyingTargetForPoint, descendantLayersByElement, visibleOpeningRects, openingLayerRects } from "./layers.mjs";
 import { captureDestructionState, snapshotOpeningRects, type DestructionState } from "./destruction-replay.mjs";
 import { containedMediaPlacement, mediaMaskAlpha } from "./owned-media-fragments.mjs";
@@ -113,6 +114,8 @@ class PageBattle {
   heldSides = new Map<number, HeldSpawn>();
   heldKeys = new Map<string, HeldSpawn>();
   scanAt = 0;
+  profileEnabled = document.documentElement.hasAttribute("data-lok-profile-kinetic");
+  profileCountAt = 0;
   observer: MutationObserver;
 
   constructor(variant: Variant) {
@@ -377,6 +380,7 @@ class PageBattle {
 
   tick = (now: number) => {
     if (!this.running) return;
+    const updateStarted = this.profileEnabled ? performance.now() : 0;
     const elapsedMs = now - this.previous;
     const dt = Math.min(2.5, Math.max(0.3, elapsedMs / 16.67));
     this.previous = now;
@@ -399,7 +403,17 @@ class PageBattle {
       const timeline = this.panel.querySelector<HTMLInputElement>("[data-timeline]");
       if (timeline && this.replayIndex === null) { timeline.max = String(Math.max(0, this.snapshots.length - 1)); timeline.value = timeline.max; }
     }
+    const drawStarted = this.profileEnabled ? performance.now() : 0;
     this.draw(now);
+    if (this.profileEnabled) {
+      this.host.dataset.updateMs = (drawStarted - updateStarted).toFixed(2);
+      this.host.dataset.drawMs = (performance.now() - drawStarted).toFixed(2);
+      if (now >= this.profileCountAt) {
+        const counts = countDestructionWork(this.targets.values(), this.chunks.length);
+        for (const [name, value] of Object.entries(counts)) this.host.dataset[name] = String(value);
+        this.profileCountAt = now + 500;
+      }
+    }
     this.frame = requestAnimationFrame(this.tick);
   };
 
