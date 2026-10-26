@@ -35,5 +35,13 @@ Classic-look menu; LOK menu pick (Titans) -> match HUD shows `[MOD: TITANS ...]`
 Host/Join Game (network UI), XXL mode, Mobile UI button on a real phone, replay, Boss Rush. See `../docs/ROADMAP.md`.
 
 ## Character models
-Default style = **block** (original square characters). The style cycle button (Mobile UI) still offers
-`classic`, `hd` and `sabre` (the newer rounded models). Style is passed through to every character draw call.
+Default style = **V2 / HD** (`hd`). Settings offer Block, Classic, V2 / HD, and V3 / Sabre; the selected
+style applies to every fighter and is saved locally. When embedded on GSix, signed-in players also sync
+the preference to their account through the parent page.
+
+## Alpha availability
+- Solo play is available without an account.
+- Host / Join currently has no network transport. The menu explains that these options are unavailable
+  and offers local play instead; invite codes are not generated or accepted.
+- LoK Passport, currency, and title purchases are not connected to live services and are not presented
+  as available game features.
