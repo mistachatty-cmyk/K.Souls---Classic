@@ -91,6 +91,9 @@ function getGsixParentOrigin(): string | null {
  * game state rather than React `useState`, preventing costly React re-renders during gameplay.
  */
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
+const CARD = new URLSearchParams(location.search).get("embed") === "card";
+const CARD_FPS = new URLSearchParams(location.search).get("quality") === "balanced" ? 30 : 60;
+
 export default function KineticSouls() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -444,6 +447,14 @@ export default function KineticSouls() {
    * Arrays holding all active game objects. Wrapped in `dataRef` for easy passing.
    */
   const refChars = useRef<Character[]>([]);
+  const cardSeeded = useRef(false);
+  const cardAnnounced = useRef(false);
+  if (CARD && !cardSeeded.current) {
+    const initial: Character[] = [];
+    if (CARD) for (let i = 0; i < 12; i++) initial.push(spawnCharacter(i % 4 + 1, "none", initial, false, true, "standard", 1));
+    refChars.current = initial;
+    cardSeeded.current = true;
+  }
   const refParts = useRef<Particle[]>([]);
   const refGhosts = useRef<Ghost[]>([]);
   const refTexts = useRef<FloatingText[]>([]);
@@ -812,6 +823,7 @@ export default function KineticSouls() {
    */
   const gameLoop = useCallback(
     (timestamp: number) => {
+      if (CARD && (document.hidden || timestamp - timeRef.last.current < 1000 / CARD_FPS)) { timeRef.raf.current = requestAnimationFrame(gameLoop); return; }
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
@@ -838,7 +850,8 @@ export default function KineticSouls() {
       }
 
       if (screen === "menu") {
-        drawMainMenu(ctx, refs.mode.current, refs.opp.current, mouseRef.current, timestamp, state, currentSplash);
+        if (CARD) drawThemeBackground(ctx, state.theme, timestamp, ARENA_W, ARENA_H + SCOREBOARD_H, 0);
+        else drawMainMenu(ctx, refs.mode.current, refs.opp.current, mouseRef.current, timestamp, state, currentSplash);
         if (state.menuSimulator) {
           timeRef.botTimer.current += subDtRaw;
           
@@ -2564,6 +2577,7 @@ export default function KineticSouls() {
           ctx.globalCompositeOperation = "source-over";
         }
 
+      if (CARD && !cardAnnounced.current) { cardAnnounced.current = true; window.parent.postMessage({ type: "gsix-card-ready" }, "*"); }
       timeRef.raf.current = requestAnimationFrame(gameLoop);
     },
     [refs, dataRef, timeRef, endGame, triggerExplosion, spawnText, getDynamicSpawn],
@@ -2726,6 +2740,8 @@ export default function KineticSouls() {
       <span style={{ color: "#00ff00", minWidth: "30px", textAlign: "right" }}>{display}</span>
     </div>
   );
+
+  if (CARD) return <canvas ref={canvasRef} width={ARENA_W} height={ARENA_H + SCOREBOARD_H} aria-hidden="true" style={{ display: "block", width: "100vw", height: "100vh", objectFit: "cover", background: "#080b12", pointerEvents: "none" }} />;
 
   return (
     <div
